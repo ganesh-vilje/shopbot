@@ -54,8 +54,8 @@ export default function LoginForm() {
               <input
                 type="email" required value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 text-sm transition-all"
-                style={{"--tw-ring-color":"#C0392B"} as React.CSSProperties}
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none text-sm"
+                // style={{"--tw-ring-color":"#C0392B"} as React.CSSProperties}
                 onFocus={e => e.target.style.borderColor = "#C0392B"}
                 onBlur={e => e.target.style.borderColor = "#D1D5DB"}
               />

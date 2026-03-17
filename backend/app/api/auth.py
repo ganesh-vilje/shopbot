@@ -33,6 +33,7 @@ def _make_token_response(user: Customer) -> dict:
     redis.setex(f"refresh:{refresh_token}", REFRESH_TTL, user.id)
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": UserResponse.model_validate(user),
     }

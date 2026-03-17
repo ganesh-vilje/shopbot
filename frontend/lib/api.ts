@@ -55,7 +55,7 @@ async function tryRefreshToken(): Promise<string | null> {
       return null;
     }
     const data = await res.json();
-    setTokens(data.access_token);
+    setTokens(data.access_token, data.refresh_token);
     if (data.user) setUser(data.user);
     refreshQueue.forEach((cb) => cb(data.access_token));
     refreshQueue = [];

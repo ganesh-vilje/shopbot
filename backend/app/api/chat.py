@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from app.api.deps import get_current_user
-from app.db.session import get_db, engine
+from app.db.session import get_db, engine, SessionLocal
 from app.models.customer import Customer
 from app.models.conversation import Conversation, Message
 from app.schemas.chat import ChatRequest, ConversationOut, ConversationListItem
@@ -13,7 +13,6 @@ from app.agents.intent_classifier import classify_intent
 from app.agents.sql_generator import generate_sql
 from app.agents.query_executor import execute_query
 from app.agents.response_synthesiser import synthesise
-from app.db.session import SessionLocal
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -39,12 +38,27 @@ def chat(
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
         title = payload.message[:60] + ("..." if len(payload.message) > 60 else "")
-        conv = Conversation(customer_id=current_user.id, title=title)
+        conv  = Conversation(customer_id=current_user.id, title=title)
         db.add(conv)
         db.commit()
         db.refresh(conv)
 
-    # ── 2. Save user message ───────────────────────────────────────────────
+    # ── 2. Load conversation history BEFORE saving new message ────────────
+    # Get last 10 messages for context (user + assistant only)
+    conversation_history = (
+        db.query(Message)
+        .filter(
+            Message.conversation_id == conv.id,
+            Message.role.in_(["user", "assistant"])
+        )
+        .order_by(Message.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    # Reverse to get chronological order
+    conversation_history = list(reversed(conversation_history))
+
+    # ── 3. Save user message ───────────────────────────────────────────────
     db.add(Message(
         conversation_id=conv.id,
         role="user",
@@ -52,12 +66,16 @@ def chat(
     ))
     db.commit()
 
-    # ── 3. Classify intent ─────────────────────────────────────────────────
-    classification = classify_intent(payload.message, current_user.id)
+    # ── 4. Classify intent — pass history for context awareness ───────────
+    classification = classify_intent(
+        payload.message,
+        current_user.id,
+        conversation_history        # ← history passed here
+    )
     intent   = classification.get("intent", "general_faq")
     entities = classification.get("entities", {"limit": 5})
 
-    # ── 4. Generate SQL ────────────────────────────────────────────────────
+    # ── 5. Generate SQL ────────────────────────────────────────────────────
     sql, faq_key = generate_sql(
         question    = payload.message,
         intent      = intent,
@@ -66,36 +84,33 @@ def chat(
         engine      = engine
     )
 
-    # ── 5. Execute query ───────────────────────────────────────────────────
+    # ── 6. Execute query ───────────────────────────────────────────────────
     data_rows = []
     if sql:
         data_rows = execute_query(db, sql)
 
-    # ── 6. Stream response ─────────────────────────────────────────────────
+    # ── 7. Stream response ─────────────────────────────────────────────────
     full_response = []
-
-    conv_id = str(conv.id)  # ensure it's a string for the client
+    conv_id       = str(conv.id)
 
     def stream_and_save():
 
+        # Stream all chunks
         for chunk in synthesise(
-            question      = payload.message,
-            intent        = intent,
-            data_rows     = data_rows,
-            faq_key       = faq_key,
-            customer_name = current_user.full_name
+            question             = payload.message,
+            intent               = intent,
+            data_rows            = data_rows,
+            faq_key              = faq_key,
+            customer_name        = current_user.full_name,
+            conversation_history = conversation_history   # ← history passed here
         ):
             full_response.append(chunk)
             yield f"data: {_escape_for_sse(chunk)}\n\n"
 
-        # ADD THESE DEBUG PRINTS:
-        print(f"[DEBUG] Chunks collected: {len(full_response)}")
-        print(f"[DEBUG] Full text: {''.join(full_response)[:80]}")
-
+        # Save assistant message using a fresh DB session
         save_db = SessionLocal()
         try:
             full_text = "".join(full_response)
-            print(f"[DEBUG] full_text empty? {not full_text.strip()}")
             if full_text.strip():
                 save_db.add(Message(
                     conversation_id = conv_id,
@@ -109,7 +124,7 @@ def chat(
                 if save_conv:
                     save_conv.updated_at = datetime.utcnow()
                 save_db.commit()
-                print(f"[Chat] ✓ Saved assistant message for conv {conv.id}")
+                print(f"[Chat] ✓ Saved assistant message for conv {conv_id}")
         except Exception as e:
             print(f"[Chat] ✗ Failed to save: {e}")
             save_db.rollback()

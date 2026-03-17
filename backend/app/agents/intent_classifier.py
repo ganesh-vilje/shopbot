@@ -47,8 +47,13 @@ ENTITY EXTRACTION RULES:
 - max_price     : maximum price if user mentions a price range
 - limit         : number of results user wants (default 5, max 20)
 
+CONTEXT RULES:
+- Use the conversation history to understand follow-up questions
+- If user asks "how many pieces" after discussing iPhone 15 Pro, extract product_name = "iPhone 15 Pro"
+- If user asks "what about the price" after a product search, classify as price_check for that product
+
 ANTI-HALLUCINATION RULES:
-- Only extract entities that are EXPLICITLY mentioned in the message
+- Only extract entities that are EXPLICITLY mentioned or clearly implied from context
 - Do NOT infer or assume entities that are not clearly stated
 - If no entity of a type is mentioned, omit that key entirely
 - Always include "limit" with value 5 as default
@@ -63,7 +68,14 @@ RESPOND WITH THIS EXACT JSON FORMAT:
 }"""
 
 
-def classify_intent(message: str, user_id: str) -> dict:
+def _get_msg_field(msg, field: str) -> str:
+    """Safely get a field from either a dict or SQLAlchemy model object."""
+    if isinstance(msg, dict):
+        return msg.get(field, "")
+    return getattr(msg, field, "")
+
+
+def classify_intent(message: str, user_id: str, history: list = []) -> dict:
     """
     Classify user message into intent + entities.
     Returns a dict with keys: intent, confidence, entities.
@@ -71,15 +83,25 @@ def classify_intent(message: str, user_id: str) -> dict:
     if not settings.OPENAI_API_KEY:
         return _fallback_classify(message)
 
+    # ── Build conversation history context ─────────────────────────────────
+    history_text = ""
+    if history:
+        history_text = "\n\nRecent conversation context (use this to understand follow-up questions):\n"
+        for msg in history[-6:]:
+            msg_role    = _get_msg_field(msg, "role")
+            msg_content = _get_msg_field(msg, "content")
+            role_label  = "Customer" if msg_role == "user" else "Assistant"
+            history_text += f"{role_label}: {msg_content[:200]}\n"
+
     try:
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": message},
+                {"role": "user",   "content": f"{history_text}\n\nCurrent message: {message}"},
             ],
-            temperature=0,           # deterministic classification
+            temperature=0,
             max_tokens=300,
             timeout=10,
             response_format={"type": "json_object"},
@@ -88,15 +110,12 @@ def classify_intent(message: str, user_id: str) -> dict:
         raw    = response.choices[0].message.content or "{}"
         result = json.loads(raw)
 
-        # Validate intent is one we know
+        # Validate intent
         if result.get("intent") not in INTENTS:
             print(f"[IntentClassifier] Unknown intent: {result.get('intent')} — defaulting to out_of_scope")
             result["intent"] = "out_of_scope"
 
-        # Ensure confidence is present
         result.setdefault("confidence", 0.9)
-
-        # Ensure entities dict exists with limit
         result.setdefault("entities", {})
         result["entities"].setdefault("limit", 5)
 
@@ -121,7 +140,6 @@ def _fallback_classify(message: str) -> dict:
     """
     Rule-based fallback classifier.
     Used when OpenAI API is unavailable or errors out.
-    Less accurate than LLM but always available.
     """
     msg      = message.lower().strip()
     entities: dict = {"limit": 5}
@@ -151,7 +169,7 @@ def _fallback_classify(message: str) -> dict:
         intent = "order_history"
     elif any(w in msg for w in ["how much", "what is the price", "cost", "pricing", "price of"]):
         intent = "price_check"
-    elif any(w in msg for w in ["in stock", "available", "availability", "do you have", "is there"]):
+    elif any(w in msg for w in ["in stock", "available", "availability", "do you have", "is there", "how many"]):
         intent = "stock_check"
     elif any(w in msg for w in ["best", "top", "popular", "recommended", "highest rated", "most rated", "trending"]):
         intent = "top_products"
