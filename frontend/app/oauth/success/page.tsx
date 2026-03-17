@@ -1,22 +1,20 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { setTokens, setUser } from "@/lib/api";
+import { api, setTokens, setUser } from "@/lib/api";
+import type { User } from "@/types";
 
 export default function OAuthSuccess() {
   const router = useRouter();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token  = params.get("token");
+    const accessToken = params.get("token");
+    const refreshToken = params.get("refresh_token");
 
-    if (token) {
-      setTokens(token);
-      // Fetch user info with the token
-      fetch("http://localhost:8000/api/me", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-        .then(r => r.json())
+    if (accessToken) {
+      setTokens(accessToken, refreshToken || undefined);
+      api.get<User>("/api/me")
         .then(user => {
           setUser(user);
           router.push("/dashboard");

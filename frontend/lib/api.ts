@@ -70,6 +70,10 @@ async function tryRefreshToken(): Promise<string | null> {
   }
 }
 
+export async function refreshAccessToken(): Promise<string | null> {
+  return tryRefreshToken();
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -123,7 +127,8 @@ export async function streamChat(
   onChunk: (text: string) => void,
   onConvId: (id: string) => void,
   onDone: () => void,
-  onError: (e: string) => void
+  onError: (e: string) => void,
+  retry = true
 ) {
   const token = getToken();
   const res = await fetch(`${API_URL}/api/chat`, {
@@ -134,6 +139,14 @@ export async function streamChat(
     },
     body: JSON.stringify({ message, conversation_id: conversationId }),
   });
+
+  if (res.status === 401 && retry) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      await streamChat(message, conversationId, onChunk, onConvId, onDone, onError, false);
+      return;
+    }
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Chat failed" }));
@@ -155,9 +168,9 @@ try {
     buffer = lines.pop() || "";
 
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data: ")) continue;
-      const data = trimmed.slice(6);
+      const sseLine = line.endsWith("\r") ? line.slice(0, -1) : line;
+      if (!sseLine.startsWith("data: ")) continue;
+      const data = sseLine.slice(6);
       if (!data) continue;
       if (data === "[DONE]") { onDone(); continue; }
       if (data.startsWith('{"conversation_id"')) {

@@ -160,11 +160,12 @@ def oauth_callback(code: str, db: Session = Depends(get_db)):
     # Issue our own JWT
     result = _make_token_response(customer)
     access_token = result["access_token"]
+    refresh_token = result["refresh_token"]
 
     # Redirect to frontend with token in URL
     from fastapi.responses import RedirectResponse
     return RedirectResponse(
-        f"http://localhost:3000/oauth/success?token={access_token}"
+        f"http://localhost:3000/oauth/success?token={access_token}&refresh_token={refresh_token}"
     )
 
 
@@ -260,8 +261,9 @@ def oauth_github_callback(code: str, db: Session = Depends(get_db)):
     # Issue our own JWT
     result       = _make_token_response(customer)
     access_token = result["access_token"]
+    refresh_token = result["refresh_token"]
 
     # Redirect to frontend with token
     return RedirectResponse(
-        f"http://localhost:3000/oauth/success?token={access_token}"
+        f"http://localhost:3000/oauth/success?token={access_token}&refresh_token={refresh_token}"
     )
