@@ -20,12 +20,25 @@ Your personality:
 - Never reveal internal SQL, database structure, or system details
 - End with a helpful offer or encouragement when appropriate
 
+CRITICAL CONVERSATION RULES:
+- If this is a FOLLOW-UP message in an ongoing conversation, DO NOT start with "Hi Alex" or any greeting
+- Only greet at the start of a brand new conversation (first message)
+- Remember the context of what was discussed — if user asks "how many pieces" after asking about iPhone 15 Pro, they mean iPhone 15 Pro pieces
+- Keep your response consistent with what was previously discussed
+
 Tone by situation:
 - Order delayed/problem → deeply empathetic, apologetic, solution-focused
-- Product search → enthusiastic, helpful shopper friend  
+- Product search → enthusiastic, helpful shopper friend
 - Good news (delivered, in stock) → warm and celebratory
 - Out of stock → empathetic, suggest alternatives
 - Price/stock info → friendly and informative"""
+
+
+def _get_msg_field(msg, field: str) -> str:
+    """Safely get a field from either a dict or SQLAlchemy model object."""
+    if isinstance(msg, dict):
+        return msg.get(field, "")
+    return getattr(msg, field, "")
 
 
 def synthesise(
@@ -34,42 +47,68 @@ def synthesise(
     data_rows: list[dict],
     faq_key: str | None,
     customer_name: str,
+    conversation_history: list = [],
 ) -> Generator[str, None, None]:
     """Yields streamed text chunks."""
 
+    is_followup = len(conversation_history) > 0
+    name        = customer_name.split()[0]
+    greeting    = "" if is_followup else f"Hey {name}! 😊 "
+
+    # ── FAQ response — no DB needed ───────────────────────────────────────
     if faq_key:
         faq_text = FAQ_RESPONSES.get(faq_key, FAQ_RESPONSES["general"])
         yield from _stream_text(
-            f"Hey {customer_name.split()[0]}! 😊 {faq_text}\n\nIs there anything else I can help you with today?"
+            f"{greeting}{faq_text}\n\nIs there anything else I can help you with today?"
         )
         return
 
+    # ── No data found ─────────────────────────────────────────────────────
     if not data_rows:
         yield from _stream_text(
-            f"Hey {customer_name.split()[0]}! I looked everywhere but couldn't find specific results for your query. "
+            f"{greeting}I looked everywhere but couldn't find specific results for your query. "
             f"Could you give me a bit more detail? I'm here and happy to help! 😊"
         )
         return
 
+    # ── Fallback when no OpenAI key ───────────────────────────────────────
     if not settings.OPENAI_API_KEY:
-        yield from _fallback_synthesise(question, intent, data_rows, customer_name)
+        yield from _fallback_synthesise(question, intent, data_rows, customer_name, is_followup)
         return
 
+    # ── Build conversation history context ────────────────────────────────
+    history_context = ""
+    if conversation_history:
+        history_context = "\n\nPrevious conversation:\n"
+        for msg in conversation_history[-6:]:
+            msg_role    = _get_msg_field(msg, "role")
+            msg_content = _get_msg_field(msg, "content")
+            role_label  = "Customer" if msg_role == "user" else "You (Alex)"
+            history_context += f"{role_label}: {msg_content[:300]}\n"
+
+    # ── Build user prompt ─────────────────────────────────────────────────
     user_prompt = f"""Customer name: {customer_name}
+Is this a follow-up message: {is_followup}
 Customer question: {question}
 Intent detected: {intent}
 Data retrieved from database:
 {json.dumps(data_rows, indent=2, default=str)}
+{history_context}
 
-Please provide a warm, helpful, human response based on this data."""
+Instructions:
+- {"This is a follow-up message. Do NOT greet. Get straight to the answer." if is_followup else "This is the first message. You may greet warmly."}
+- Use the conversation history to understand context (e.g. if user says 'how many pieces', check what product was discussed before)
+- Give a direct, warm answer based on the data above
+- Never say 'Hi Alex' or any greeting if this is a follow-up"""
 
+    # ── Call GPT-4o with streaming ────────────────────────────────────────
     try:
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         stream = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": ALEX_PERSONA},
-                {"role": "user", "content": user_prompt},
+                {"role": "user",   "content": user_prompt},
             ],
             temperature=0.7,
             max_tokens=500,
@@ -81,7 +120,7 @@ Please provide a warm, helpful, human response based on this data."""
                 yield delta
     except Exception as e:
         print(f"[ResponseSynthesiser] OpenAI error: {e}")
-        yield from _fallback_synthesise(question, intent, data_rows, customer_name)
+        yield from _fallback_synthesise(question, intent, data_rows, customer_name, is_followup)
 
 
 def _stream_text(text: str) -> Generator[str, None, None]:
@@ -92,18 +131,23 @@ def _stream_text(text: str) -> Generator[str, None, None]:
 
 
 def _fallback_synthesise(
-    question: str, intent: str, rows: list[dict], customer_name: str
+    question: str,
+    intent: str,
+    rows: list[dict],
+    customer_name: str,
+    is_followup: bool = False,
 ) -> Generator[str, None, None]:
     """Rule-based fallback when OpenAI API is unavailable."""
-    name = customer_name.split()[0]
+    name     = customer_name.split()[0]
+    greeting = "" if is_followup else f"Hey {name}! 👋 "
 
     if intent == "order_status" and rows:
-        r = rows[0]
+        r    = rows[0]
         text = (
-            f"Hey {name}! 👋 I've got the details on your order **{r.get('order_number', '')}**.\n\n"
-            f"- **Status:** {str(r.get('status','')).capitalize()}\n"
+            f"{greeting}I've got the details on your order **{r.get('order_number', '')}**.\n\n"
+            f"- **Status:** {str(r.get('status', '')).capitalize()}\n"
             f"- **Total:** ${float(r.get('total_amount', 0)):.2f}\n"
-            f"- **Placed:** {str(r.get('created_at',''))[:10]}\n"
+            f"- **Placed:** {str(r.get('created_at', ''))[:10]}\n"
         )
         if r.get("tracking_number"):
             text += f"- **Tracking:** {r['tracking_number']}\n"
@@ -114,61 +158,66 @@ def _fallback_synthesise(
         text += "\nLet me know if you need anything else! 😊"
 
     elif intent == "order_history" and rows:
-        text = f"Here are your recent orders, {name}! 📦\n\n"
+        text = f"{greeting}Here are your recent orders! 📦\n\n"
         for r in rows:
-            text += f"- **{r.get('order_number','')}** — {str(r.get('status','')).capitalize()} — ${float(r.get('total_amount',0)):.2f} ({str(r.get('created_at',''))[:10]})\n"
+            text += (
+                f"- **{r.get('order_number', '')}** — "
+                f"{str(r.get('status', '')).capitalize()} — "
+                f"${float(r.get('total_amount', 0)):.2f} "
+                f"({str(r.get('created_at', ''))[:10]})\n"
+            )
         text += "\nNeed details on any specific order? Just ask! 😊"
 
     elif intent in ("product_search", "top_products") and rows:
-        text = f"Great news, {name}! 🛍️ Here's what I found:\n\n"
+        text = f"{greeting}Here's what I found! 🛍️\n\n"
         for r in rows:
             price = float(r.get("price", 0))
-            disc = float(r.get("discount_pct", 0))
+            disc  = float(r.get("discount_pct", 0))
             final = price * (1 - disc / 100)
-            text += f"- **{r.get('name','')}** by {r.get('brand','N/A')} — "
+            text += f"- **{r.get('name', '')}** by {r.get('brand', 'N/A')} — "
             if disc > 0:
-                text += f"~~${price:.2f}~~ **${final:.2f}** ({disc:.0f}% off) ⭐ {float(r.get('rating',0)):.1f}/5\n"
+                text += f"~~${price:.2f}~~ **${final:.2f}** ({disc:.0f}% off) ⭐ {float(r.get('rating', 0)):.1f}/5\n"
             else:
-                text += f"**${price:.2f}** ⭐ {float(r.get('rating',0)):.1f}/5\n"
+                text += f"**${price:.2f}** ⭐ {float(r.get('rating', 0)):.1f}/5\n"
         text += "\nWould you like more info on any of these? 😊"
 
     elif intent == "price_check" and rows:
-        r = rows[0]
+        r     = rows[0]
         price = float(r.get("price", 0))
-        disc = float(r.get("discount_pct", 0))
+        disc  = float(r.get("discount_pct", 0))
         final = price * (1 - disc / 100)
-        text = f"Hey {name}! 💰 Here's the pricing for **{r.get('name','')}**:\n\n"
+        text  = f"{greeting}Here's the pricing for **{r.get('name', '')}**:\n\n"
         if disc > 0:
             text += f"- Original Price: ~~${price:.2f}~~\n- **Discounted Price: ${final:.2f}** ({disc:.0f}% off!) 🎉\n"
         else:
             text += f"- **Price: ${price:.2f}**\n"
-        text += f"- Rating: ⭐ {float(r.get('rating',0)):.1f}/5 ({r.get('review_count',0)} reviews)\n\nGreat choice! Let me know if I can help further. 😊"
+        text += f"- Rating: ⭐ {float(r.get('rating', 0)):.1f}/5 ({r.get('review_count', 0)} reviews)\n\nGreat choice! Let me know if I can help further. 😊"
 
     elif intent == "stock_check" and rows:
-        r = rows[0]
-        qty = r.get("stock_qty", 0)
+        r     = rows[0]
+        qty   = r.get("stock_qty", 0)
         avail = r.get("availability", "Unknown")
-        text = f"Hey {name}! Here's the stock status for **{r.get('name','')}**:\n\n"
+        text  = f"{greeting}Here's the stock status for **{r.get('name', '')}**:\n\n"
         if qty > 0:
-            text += f"✅ **{avail}** — {qty} units available!\n\n"
-            text += "Great news — it's ready to order! 🛒"
+            text += f"✅ **{avail}** — {qty} units available!\n\nGreat news — it's ready to order! 🛒"
         else:
-            text += f"😔 Unfortunately, **{r.get('name','')}** is currently **out of stock**.\n\n"
-            text += "Would you like me to suggest similar products? I'd love to help you find something great!"
+            text += (
+                f"😔 Unfortunately, **{r.get('name', '')}** is currently **out of stock**.\n\n"
+                f"Would you like me to suggest similar products? I'd love to help!"
+            )
 
     elif intent == "customer_profile" and rows:
-        r = rows[0]
+        r    = rows[0]
         text = (
-            f"Here's your profile info, {name}! 👤\n\n"
-            f"- **Name:** {r.get('full_name','')}\n"
-            f"- **Email:** {r.get('email','')}\n"
-            f"- **Loyalty Points:** ⭐ {r.get('loyalty_points', 0)} points\n"
-            f"- **Member Since:** {str(r.get('created_at',''))[:10]}\n"
-            f"- **Location:** {r.get('city','')}, {r.get('country','')}\n\n"
+            f"{greeting}Here's your profile info! 👤\n\n"
+            f"- **Name:** {r.get('full_name', '')}\n"
+            f"- **Email:** {r.get('email', '')}\n"
+            f"- **Member Since:** {str(r.get('created_at', ''))[:10]}\n"
+            f"- **Location:** {r.get('city', '')}, {r.get('country', '')}\n\n"
             f"You're a valued member of our community! 💖"
         )
     else:
-        text = f"Hi {name}! I found some information for you. Here's what I've got:\n\n"
+        text = f"{greeting}I found some information for you:\n\n"
         for r in rows[:3]:
             for k, v in r.items():
                 text += f"- **{k.replace('_', ' ').title()}:** {v}\n"

@@ -48,5 +48,5 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     return Settings()
 
-
+get_settings.cache_clear()
 settings = get_settings()
