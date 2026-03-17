@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "postgresql://postgres:root@localhost:5432/shopbot_db"
+    DATABASE_URL: str = "postgresql://postgres:root@localhost:5432/shopbot_db1"
 
     # Redis
     REDIS_URL: str = "redis://:redis_secret@redis:6379/0"
