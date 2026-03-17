@@ -1,9 +1,14 @@
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 from sqlalchemy import String, Text, DateTime, Numeric, ForeignKey, func, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.customer import Customer
+    from app.models.product import Product
 
 
 class OrderStatus(str, enum.Enum):

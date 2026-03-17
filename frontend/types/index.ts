@@ -2,7 +2,6 @@ export interface User {
   id: string;
   full_name: string;
   email: string;
-  loyalty_points: number;
   is_verified: boolean;
 }
 

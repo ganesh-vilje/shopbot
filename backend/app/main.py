@@ -7,6 +7,7 @@ from app.api import auth, chat, users, products, orders
 
 app = FastAPI(
     title="ShopBot API",
+    redirect_slashes=False,
     description="AI-powered e-commerce chat assistant backend",
     version="1.0.0",
     docs_url="/docs" if settings.DEBUG else None,

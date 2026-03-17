@@ -25,7 +25,6 @@ def get_me(current_user: Customer = Depends(get_current_user)):
         "phone": current_user.phone,
         "city": current_user.city,
         "country": current_user.country,
-        "loyalty_points": current_user.loyalty_points,
         "is_verified": current_user.is_verified,
         "created_at": current_user.created_at,
     }

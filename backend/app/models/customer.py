@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from sqlalchemy import String, Boolean, Integer, Text, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.order import Order
 
 
 class Customer(Base):
@@ -15,7 +19,6 @@ class Customer(Base):
     address: Mapped[str | None] = mapped_column(Text)
     city: Mapped[str | None] = mapped_column(String(100), index=True)
     country: Mapped[str] = mapped_column(String(2), default="US")
-    # loyalty_points: Mapped[int] = mapped_column(Integer, default=0)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     hashed_password: Mapped[str | None] = mapped_column(Text)
     oauth_provider: Mapped[str | None] = mapped_column(String(50))

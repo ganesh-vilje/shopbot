@@ -19,14 +19,24 @@ export default function DashboardPage() {
   } = useChat();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const convLoadedRef = useRef(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
   }, [user, authLoading, router]);
 
-  useEffect(() => {
-    if (user) loadConversations();
-  }, [user, loadConversations]);
+useEffect(() => {
+  if (user && !convLoadedRef.current) {
+    convLoadedRef.current = true;
+    loadConversations().then(() => {
+      // After conversations load, restore the last active one
+      const savedConvId = localStorage.getItem("active_conv_id");
+      if (savedConvId) {
+        loadConversation(savedConvId);
+      }
+    });
+  }
+}, [user, loadConversations, loadConversation]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -62,8 +72,8 @@ export default function DashboardPage() {
 
         {/* Main chat area */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-3xl mx-auto px-4 py-6">
+          <div className="flex-1 overflow-y-auto flex" >
+            <div className="flex-1 flex flex-col max-w-3xl mx-auto px-4 pt-24 pb-50 w-full">
               {messages.length === 0 ? (
                 <WelcomeScreen name={user.full_name} onSuggest={text => { setInput(text); }} />
               ) : (

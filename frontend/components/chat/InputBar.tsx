@@ -29,8 +29,7 @@ export default function InputBar({ value, onChange, onSubmit, disabled }: InputB
   return (
     <div className="border-t border-gray-200 bg-white px-4 py-3">
       <div className="max-w-3xl mx-auto">
-        <div className="flex items-end gap-2 rounded-2xl border-2 px-4 py-2 transition-colors focus-within:border-red-400"
-          style={{borderColor:"#E5E7EB", background:"#FAFAFA"}}
+        <div className="flex items-end gap-2 px-4 py-2 rounded-lg transition-all" style={{border:"2px solid transparent"}} onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = "#C0392B"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "transparent"}
         >
           <textarea
             ref={ref}
@@ -40,8 +39,8 @@ export default function InputBar({ value, onChange, onSubmit, disabled }: InputB
             onKeyDown={handleKey}
             disabled={disabled}
             placeholder="Ask about your orders, products, account…"
-            className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none py-1"
-            style={{maxHeight:"140px", lineHeight:"1.5"}}
+            className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none px-1 text-left"
+            style={{paddingBottom:"6px", fontFamily:"sans-serif"}}
           />
           <button
             onClick={onSubmit}

@@ -41,7 +41,6 @@ class UserResponse(BaseModel):
     id: str
     full_name: str
     email: str
-    loyalty_points: int
     is_verified: bool
 
     class Config:

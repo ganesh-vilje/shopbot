@@ -9,14 +9,14 @@ const SUGGESTIONS = [
 
 export default function WelcomeScreen({ name, onSuggest }: { name: string; onSuggest: (text: string) => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full px-4 py-16 text-center">
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-lg" style={{background:"#C0392B"}}>
+    <div className="flex-1 flex flex-col items-center justify-center px-4 text-center">
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-lg" style={{background:"#C0392B"}}>
         <ShoppingBag size={32} color="white" />
       </div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-2">
+      <h2 className="text-3xl font-bold text-gray-900 mb-3">
         Hello, {name?.split(" ")[0] || "there"}! 👋
       </h2>
-      <p className="text-gray-500 text-sm max-w-xs mb-8">
+      <p className="text-gray-500 text-sm max-w-md mb-8">
         I&apos;m Alex, your ShopBot assistant. Ask me anything about your orders, products, or account!
       </p>
       <div className="grid grid-cols-1 gap-2 w-full max-w-sm">

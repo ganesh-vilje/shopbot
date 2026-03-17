@@ -27,6 +27,11 @@ class MockRedis:
                 del self._store[key]
         return None
     
+    def delete(self, key: str) -> None:
+        """Delete a key"""
+        if key in self._store:
+            del self._store[key]
+    
     def incr(self, key: str) -> int:
         """Increment counter"""
         current = self.get(key)

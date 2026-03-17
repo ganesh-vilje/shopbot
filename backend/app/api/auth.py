@@ -14,8 +14,11 @@ from app.schemas.auth import (
     SignupRequest, LoginRequest, TokenResponse,
     UserResponse, RefreshRequest,
 )
+import httpx
+from urllib.parse import urlencode
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+
+router = APIRouter(prefix="/auth", tags=["auth"], redirect_slashes=False)
 
 REFRESH_TTL = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
 
@@ -97,3 +100,167 @@ def logout(payload: RefreshRequest):
     redis = get_redis()
     redis.delete(f"refresh:{payload.refresh_token}")
     return {"message": "Logged out successfully"}
+
+
+@router.get("/oauth/google")
+def oauth_google_redirect():
+    """Redirect user to Google login page."""
+    params = {
+        "client_id"    : settings.GOOGLE_CLIENT_ID,
+        "redirect_uri" : "http://localhost:8000/auth/oauth/callback",
+        "response_type": "code",
+        "scope"        : "openid email profile",
+        "access_type"  : "offline",
+    }
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url)
+
+
+@router.get("/oauth/callback")
+def oauth_callback(code: str, db: Session = Depends(get_db)):
+    """Google sends the user back here with a code."""
+    # Exchange code for token
+    token_res = httpx.post("https://oauth2.googleapis.com/token", data={
+        "code"         : code,
+        "client_id"    : settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+        "redirect_uri" : "http://localhost:8000/auth/oauth/callback",
+        "grant_type"   : "authorization_code",
+    })
+    token_data = token_res.json()
+    access_token_google = token_data.get("access_token")
+
+    # Get user info from Google
+    user_res  = httpx.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token_google}"}
+    )
+    user_info = user_res.json()
+
+    email     = user_info.get("email")
+    full_name = user_info.get("name", email)
+    oauth_id  = user_info.get("id")
+
+    # Upsert customer
+    customer = db.query(Customer).filter(Customer.email == email).first()
+    if not customer:
+        customer = Customer(
+            full_name      = full_name,
+            email          = email,
+            is_verified    = True,
+            oauth_provider = "google",
+            oauth_id       = oauth_id,
+        )
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+
+    # Issue our own JWT
+    result = _make_token_response(customer)
+    access_token = result["access_token"]
+
+    # Redirect to frontend with token in URL
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(
+        f"http://localhost:3000/oauth/success?token={access_token}"
+    )
+
+
+@router.get("/oauth/github")
+def oauth_github_redirect():
+    """Redirect user to GitHub login page."""
+    from urllib.parse import urlencode
+    from fastapi.responses import RedirectResponse
+
+    params = {
+        "client_id"   : settings.GITHUB_CLIENT_ID,
+        "redirect_uri": settings.GITHUB_REDIRECT_URI,
+        "scope"       : "user:email",
+    }
+    url = "https://github.com/login/oauth/authorize?" + urlencode(params)
+    return RedirectResponse(url)
+
+
+@router.get("/oauth/github/callback")
+def oauth_github_callback(code: str, db: Session = Depends(get_db)):
+    """GitHub sends the user back here with a code."""
+    import httpx
+    from fastapi.responses import RedirectResponse
+
+    # Exchange code for access token
+    token_res = httpx.post(
+        "https://github.com/login/oauth/access_token",
+        headers={"Accept": "application/json"},
+        data={
+            "client_id"    : settings.GITHUB_CLIENT_ID,
+            "client_secret": settings.GITHUB_CLIENT_SECRET,
+            "code"         : code,
+            "redirect_uri" : settings.GITHUB_REDIRECT_URI,
+        }
+    )
+    token_data  = token_res.json()
+    github_token = token_data.get("access_token")
+
+    if not github_token:
+        return RedirectResponse(
+            "http://localhost:3000/login?error=github_auth_failed"
+        )
+
+    # Get user info from GitHub
+    user_res  = httpx.get(
+        "https://api.github.com/user",
+        headers={
+            "Authorization": f"Bearer {github_token}",
+            "Accept"       : "application/vnd.github+json",
+        }
+    )
+    user_info = user_res.json()
+
+    # GitHub may not return email publicly — fetch separately
+    email = user_info.get("email")
+    if not email:
+        emails_res = httpx.get(
+            "https://api.github.com/user/emails",
+            headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept"       : "application/vnd.github+json",
+            }
+        )
+        emails = emails_res.json()
+        # Pick the primary verified email
+        for e in emails:
+            if e.get("primary") and e.get("verified"):
+                email = e.get("email")
+                break
+
+    if not email:
+        return RedirectResponse(
+            "http://localhost:3000/login?error=no_email"
+        )
+
+    full_name = user_info.get("name") or user_info.get("login") or email
+    oauth_id  = str(user_info.get("id"))
+
+    # Upsert customer
+    customer = db.query(Customer).filter(Customer.email == email).first()
+    if not customer:
+        customer = Customer(
+            full_name      = full_name,
+            email          = email,
+            is_verified    = True,
+            oauth_provider = "github",
+            oauth_id       = oauth_id,
+        )
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+
+    # Issue our own JWT
+    result       = _make_token_response(customer)
+    access_token = result["access_token"]
+
+    # Redirect to frontend with token
+    return RedirectResponse(
+        f"http://localhost:3000/oauth/success?token={access_token}"
+    )
