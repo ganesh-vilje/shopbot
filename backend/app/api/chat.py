@@ -7,7 +7,12 @@ from app.api.deps import get_current_user
 from app.db.session import get_db, engine, SessionLocal
 from app.models.customer import Customer
 from app.models.conversation import Conversation, Message
-from app.schemas.chat import ChatRequest, ConversationOut, ConversationListItem
+from app.schemas.chat import (
+    ChatRequest,
+    ConversationOut,
+    ConversationListItem,
+    ConversationRenameRequest,
+)
 
 from app.agents.intent_classifier import classify_intent
 from app.agents.sql_generator import generate_sql
@@ -199,3 +204,27 @@ def delete_conversation(
     db.delete(conv)
     db.commit()
     return {"message": "Deleted"}
+
+
+@router.patch("/conversations/{conv_id}", response_model=ConversationListItem)
+def rename_conversation(
+    conv_id: str,
+    payload: ConversationRenameRequest,
+    current_user: Customer = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    conv = db.query(Conversation).filter(
+        Conversation.id == conv_id,
+        Conversation.customer_id == current_user.id
+    ).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Conversation title cannot be empty")
+
+    conv.title = title[:255]
+    db.commit()
+    db.refresh(conv)
+    return conv

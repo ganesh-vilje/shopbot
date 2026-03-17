@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu } from "lucide-react";
+import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu, Pencil } from "lucide-react";
 import type { Conversation } from "@/types";
 
 interface SidebarProps {
@@ -9,6 +9,7 @@ interface SidebarProps {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, title: string) => Promise<void>;
 }
 
 interface DeleteModalProps {
@@ -99,13 +100,111 @@ function DeleteModal({ title, onConfirm, onCancel }: DeleteModalProps) {
   );
 }
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete }: SidebarProps) {
+interface RenameModalProps {
+  value: string;
+  loading: boolean;
+  error: string;
+  onChange: (value: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function RenameModal({
+  value,
+  loading,
+  error,
+  onChange,
+  onConfirm,
+  onCancel,
+}: RenameModalProps) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full mx-4 overflow-hidden"
+        style={{ maxWidth: "420px" }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: "#F9EBEA" }}
+            >
+              <Pencil size={15} style={{ color: "#C0392B" }} />
+            </div>
+            <span className="font-semibold text-gray-900 text-sm">
+              Rename Conversation
+            </span>
+          </div>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 transition-colors rounded-lg p-1"
+            style={{ color: "#9CA3AF" }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4">
+          <input
+            type="text"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") onConfirm();
+            }}
+            className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-800 focus:outline-none"
+            style={{ borderColor: "#F5C6C3" }}
+            autoFocus
+            maxLength={255}
+          />
+          {error && <p className="mt-2 text-xs" style={{ color: "#C0392B" }}>{error}</p>}
+        </div>
+
+        <div className="flex gap-2 px-5 pb-5">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-95 disabled:opacity-60"
+            style={{ background: "#C0392B" }}
+            disabled={loading}
+          >
+            {loading ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename }: SidebarProps) {
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingRename, setPendingRename] = useState<{ id: string; title: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState("");
+  const [renameLoading, setRenameLoading] = useState(false);
 
   function handleDeleteClick(e: React.MouseEvent, id: string, title: string) {
     e.stopPropagation();
     setPendingDelete({ id, title });
+  }
+
+  function handleRenameClick(e: React.MouseEvent, id: string, title: string) {
+    e.stopPropagation();
+    setPendingRename({ id, title });
+    setRenameValue(title);
+    setRenameError("");
   }
 
   function handleConfirm() {
@@ -117,6 +216,33 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
   function handleCancel() {
     setPendingDelete(null);
+  }
+
+  function handleRenameCancel() {
+    setPendingRename(null);
+    setRenameValue("");
+    setRenameError("");
+    setRenameLoading(false);
+  }
+
+  async function handleRenameConfirm() {
+    if (!pendingRename) return;
+
+    const nextTitle = renameValue.trim();
+    if (!nextTitle) {
+      setRenameError("Conversation title cannot be empty");
+      return;
+    }
+
+    try {
+      setRenameLoading(true);
+      setRenameError("");
+      await onRename(pendingRename.id, nextTitle);
+      handleRenameCancel();
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : "Failed to rename conversation");
+      setRenameLoading(false);
+    }
   }
 
   function handleSelectConversation(id: string) {
@@ -162,6 +288,13 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             >
               <MessageSquare size={14} className="flex-shrink-0" />
               <span className="text-xs flex-1 truncate font-medium">{c.title}</span>
+              <button
+                onClick={e => handleRenameClick(e, c.id, c.title)}
+                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-red-600 flex-shrink-0 p-0.5 rounded"
+                title="Rename conversation"
+              >
+                <Pencil size={12} />
+              </button>
               <button
                 onClick={e => handleDeleteClick(e, c.id, c.title)}
                 className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-red-600 flex-shrink-0 p-0.5 rounded"
@@ -221,6 +354,17 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           title={pendingDelete.title}
           onConfirm={handleConfirm}
           onCancel={handleCancel}
+        />
+      )}
+
+      {pendingRename && (
+        <RenameModal
+          value={renameValue}
+          loading={renameLoading}
+          error={renameError}
+          onChange={setRenameValue}
+          onConfirm={handleRenameConfirm}
+          onCancel={handleRenameCancel}
         />
       )}
     </>

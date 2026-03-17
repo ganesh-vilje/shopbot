@@ -100,6 +100,19 @@ export function useChat() {
     if (activeConvId === id) newConversation();
   }, [activeConvId, newConversation]);
 
+  const renameConversation = useCallback(async (id: string, title: string) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) throw new Error("Conversation title cannot be empty");
+
+    const updated = await api.patch<Conversation>(`/api/conversations/${id}`, {
+      title: trimmedTitle,
+    });
+
+    setConversations(prev =>
+      prev.map(c => (c.id === id ? { ...c, title: updated.title, updated_at: updated.updated_at } : c))
+    );
+  }, []);
+
   return {
     messages,
     conversations,
@@ -111,5 +124,6 @@ export function useChat() {
     sendMessage,
     newConversation,
     deleteConversation,
+    renameConversation,
   };
 }
