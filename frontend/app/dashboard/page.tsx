@@ -15,7 +15,7 @@ export default function DashboardPage() {
   const { user, loading: authLoading, logout } = useAuth();
   const {
     messages, conversations, activeConvId, streaming,
-    loadConversations, loadConversation, sendMessage, newConversation, deleteConversation,
+    loadConversations, loadConversation, sendMessage, newConversation, deleteConversation, renameConversation,
   } = useChat();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -68,6 +68,7 @@ useEffect(() => {
           onSelect={loadConversation}
           onNew={newConversation}
           onDelete={deleteConversation}
+          onRename={renameConversation}
         />
 
         {/* Main chat area */}

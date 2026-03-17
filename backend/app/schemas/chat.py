@@ -8,6 +8,10 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
 
 
+class ConversationRenameRequest(BaseModel):
+    title: str
+
+
 class MessageOut(BaseModel):
     id: str
     role: str

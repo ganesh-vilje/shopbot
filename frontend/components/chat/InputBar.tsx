@@ -88,13 +88,17 @@ const handleVoiceClick = () => {
       <div className="max-w-3xl mx-auto">
         <div
           className="flex items-end gap-2 px-4 py-2 rounded-lg transition-all"
-          style={{ border: "2px solid transparent" }}
-          onMouseEnter={(e) =>
-            ((e.currentTarget as HTMLElement).style.borderColor = "#C0392B")
-          }
-          onMouseLeave={(e) =>
-            ((e.currentTarget as HTMLElement).style.borderColor = "transparent")
-          }
+          style={{ border: "1px solid #C0392B" }}
+          onMouseEnter={e => {
+            const el = e.currentTarget as HTMLElement;
+            el.style.borderWidth = "2px";
+            el.style.borderColor = "#C0392B";
+          }}
+          onMouseLeave={e => {
+            const el = e.currentTarget as HTMLElement;
+            el.style.borderWidth = "1px";
+            el.style.borderColor = "#C0392B";
+          }}
         >
           <textarea
             ref={ref}
