@@ -11,7 +11,7 @@ from app.schemas.chat import ChatRequest, ConversationOut, ConversationListItem
 
 from app.agents.intent_classifier import classify_intent
 from app.agents.sql_generator import generate_sql
-from app.agents.query_executor import execute_query
+from app.agents.query_executor import execute_query, execute_with_fallback
 from app.agents.response_synthesiser import synthesise
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -84,12 +84,18 @@ def chat(
         engine      = engine
     )
 
-    # ── 6. Execute query ───────────────────────────────────────────────────
+    # ── 5. Execute query with fallback ─────────────────────────────────────
     data_rows = []
     if sql:
-        data_rows = execute_query(db, sql)
+        # Pass the search term for word-by-word fallback on empty results
+        search_term = (
+            entities.get("product_name")
+            or entities.get("brand")
+            or entities.get("category")
+        )
+        data_rows = execute_with_fallback(db, sql, search_term)
 
-    # ── 7. Stream response ─────────────────────────────────────────────────
+    # ── 6. Stream response ─────────────────────────────────────────────────
     full_response = []
     conv_id       = str(conv.id)
 

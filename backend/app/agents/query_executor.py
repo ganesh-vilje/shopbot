@@ -68,3 +68,53 @@ def _serialise(v: Any) -> Any:
     if isinstance(v, bytes):
         return v.decode("utf-8", errors="replace")
     return v
+
+
+def execute_with_fallback(db: Session, sql: str, search_term: str | None = None) -> list[dict]:
+    """
+    Execute SQL and if no results found, retry with individual words from the search term.
+    
+    Example:
+        Search "Patagonia jacket" → 0 results
+        Retry "Patagonia" → 3 results ✅
+        
+    This handles cases where the full phrase doesn't match but a keyword does.
+    """
+    # Run original query first
+    rows = execute_query(db, sql)
+
+    # If results found — return immediately, no fallback needed
+    if rows:
+        return rows
+
+    # If no search term or single word — no fallback possible
+    if not search_term or len(search_term.strip().split()) <= 1:
+        return rows
+
+    # Split search term into individual words and retry each one
+    words = search_term.strip().split()
+    
+    # Filter out short/common words that would match too broadly
+    meaningful_words = [w for w in words if len(w) > 3]
+
+    for word in meaningful_words:
+        print(f"[QueryExecutor] No results for '{search_term}' — retrying with '{word}'")
+        
+        # Replace the search term in the SQL with the single word
+        # The SQL uses LIKE '%search_term%' pattern so we replace the value
+        fallback_sql = sql.replace(f"'%{search_term}%'", f"'%{word}%'")
+        
+        # Also handle case-insensitive LOWER() patterns
+        fallback_sql = fallback_sql.replace(
+            f"LOWER('%' || '{search_term}' || '%')",
+            f"LOWER('%' || '{word}' || '%')"
+        )
+
+        fallback_rows = execute_query(db, fallback_sql)
+        
+        if fallback_rows:
+            print(f"[QueryExecutor] ✓ Found {len(fallback_rows)} results with fallback word '{word}'")
+            return fallback_rows
+
+    print(f"[QueryExecutor] No results found even with word-by-word fallback")
+    return []

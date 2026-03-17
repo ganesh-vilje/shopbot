@@ -76,6 +76,77 @@ ANTI-HALLUCINATION RULES:
 OUTPUT FORMAT: Raw SQL query only. Nothing else. No "Here is the SQL:" prefix."""
 
 
+def correct_entities(entities: dict) -> dict:
+    """
+    Use GPT-4o-mini to correct spelling mistakes in extracted entities.
+    Example: "Pantagonia" → "Patagonia", "iphone pro max" → "iPhone 15 Pro Max"
+    Returns corrected entities dict. Falls back to original if anything fails.
+    """
+    product = entities.get("product_name", "")
+    brand   = entities.get("brand", "")
+
+    # Only run correction if there is something to correct
+    if not product and not brand:
+        return entities
+
+    # Skip if no OpenAI key
+    if not settings.OPENAI_API_KEY:
+        return entities
+
+    prompt = f"""You are a spell checker for an e-commerce product search engine.
+Fix any spelling mistakes in the product name and brand below.
+
+Input:
+- product_name: "{product}"
+- brand: "{brand}"
+
+Known brands in our store (use these exact spellings):
+Apple, Samsung, Sony, Dell, Lenovo, ASUS, Microsoft, Google, LG, Nintendo,
+Nike, Adidas, New Balance, Converse, Vans, Levi's, The North Face, Patagonia,
+Champion, Uniqlo, Ray-Ban, Fossil, Herschel, Tumi, Dyson, iRobot, Philips,
+Instant Pot, Nespresso, KitchenAid, Vitamix, Cuisinart, Peloton, Garmin,
+Manduka, Hydro Flask, Bowflex, Therabody, TheraBand, Bose, Razer, SteelSeries
+
+Rules:
+- Fix obvious spelling mistakes only
+- Keep the product model/version if mentioned (e.g. "15 Pro", "WH-1000XM5")
+- If the brand is embedded in product_name, extract it to brand field
+- If you are not sure about a correction, keep the original
+- Return JSON only, no explanation
+
+Return this exact JSON format:
+{{"product_name": "corrected product name or empty string", "brand": "corrected brand name or empty string"}}"""
+
+    try:
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=100,
+            response_format={"type": "json_object"},
+        )
+        corrected = json.loads(res.choices[0].message.content)
+
+        # Only update if GPT returned non-empty corrections
+        if corrected.get("product_name"):
+            original = entities.get("product_name", "")
+            entities["product_name"] = corrected["product_name"]
+            if original != corrected["product_name"]:
+                print(f"[EntityCorrector] product_name: '{original}' → '{corrected['product_name']}'")
+
+        if corrected.get("brand"):
+            original = entities.get("brand", "")
+            entities["brand"] = corrected["brand"]
+            if original != corrected["brand"]:
+                print(f"[EntityCorrector] brand: '{original}' → '{corrected['brand']}'")
+
+    except Exception as e:
+        print(f"[EntityCorrector] Failed — using original entities: {e}")
+
+    return entities
+
+
 def generate_sql(
     question: str,
     intent: str,
@@ -94,6 +165,10 @@ def generate_sql(
     # ── Handle non-DB intents immediately ─────────────────────────────────
     if intent in ("general_faq", "out_of_scope"):
         return None, "general"
+
+    # ── Correct spelling mistakes in entities before generating SQL ────────
+    if intent in ("product_search", "price_check", "stock_check", "top_products"):
+        entities = correct_entities(entities)
 
     # ── Get only the schema tables this intent needs ───────────────────────
     relevant_schema = get_schema_for_intent(intent, engine)
