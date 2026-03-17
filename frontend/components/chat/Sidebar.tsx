@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu, Pencil } from "lucide-react";
+import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu, Pencil, Search, PenSquare } from "lucide-react";
 import type { Conversation } from "@/types";
 
 interface SidebarProps {
@@ -187,6 +187,128 @@ function RenameModal({
   );
 }
 
+interface SearchChatsModalProps {
+  conversations: Conversation[];
+  onClose: () => void;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+}
+
+function SearchChatsModal({
+  conversations,
+  onClose,
+  onSelect,
+  onNew,
+}: SearchChatsModalProps) {
+  const [query, setQuery] = useState("");
+
+  const filteredConversations = conversations.filter(conversation =>
+    conversation.title.toLowerCase().includes(query.trim().toLowerCase())
+  );
+  const sections = groupConversationsByDate(filteredConversations);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-20"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center border-b border-gray-200 px-5 py-4">
+          <Search size={18} className="mr-3 text-gray-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search chats..."
+            className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none"
+            autoFocus
+          />
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-red-400 transition-colors hover:bg-red-100 hover:text-gray-600"
+            aria-label="Close search"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="max-h-[65vh] overflow-y-auto p-3">
+          <button
+            onClick={() => {
+              onNew();
+              onClose();
+            }}
+            className="mb-3 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+            style={{ background: "#F9EBEA" }}
+          >
+            <PenSquare size={16} style={{ color: "#C0392B" }} />
+            New chat
+          </button>
+
+          {sections.length === 0 ? (
+            <div className="px-3 py-10 text-center text-sm text-gray-400">
+              No chats found for your search.
+            </div>
+          ) : (
+            sections.map(section => (
+              <div key={section.label} className="mb-5">
+                <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  {section.label}
+                </p>
+                <div className="space-y-1">
+                  {section.items.map(conversation => (
+                    <button
+                      key={conversation.id}
+                      onClick={() => {
+                        onSelect(conversation.id);
+                        onClose();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100"
+                    >
+                      <MessageSquare size={16} className="flex-shrink-0 text-gray-400" />
+                      <span className="truncate font-medium">{conversation.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function groupConversationsByDate(conversations: Conversation[]) {
+  const now = new Date();
+  const today: Conversation[] = [];
+  const previousSevenDays: Conversation[] = [];
+  const older: Conversation[] = [];
+
+  for (const conversation of conversations) {
+    const updatedAt = new Date(conversation.updated_at);
+    const diffDays = Math.floor((now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (updatedAt.toDateString() === now.toDateString()) {
+      today.push(conversation);
+    } else if (diffDays <= 7) {
+      previousSevenDays.push(conversation);
+    } else {
+      older.push(conversation);
+    }
+  }
+
+  return [
+    { label: "Today", items: today },
+    { label: "Previous 7 Days", items: previousSevenDays },
+    { label: "Older", items: older },
+  ].filter(section => section.items.length > 0);
+}
+
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename }: SidebarProps) {
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -194,6 +316,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState("");
   const [renameLoading, setRenameLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   function handleDeleteClick(e: React.MouseEvent, id: string, title: string) {
     e.stopPropagation();
@@ -266,6 +389,13 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#C0392B"}
         >
           <Plus size={16} /> New Conversation
+        </button>
+        <button
+          onClick={() => setSearchOpen(true)}
+          className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200"
+        >
+          <Search size={16} />
+          Search chats
         </button>
       </div>
 
@@ -365,6 +495,21 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           onChange={setRenameValue}
           onConfirm={handleRenameConfirm}
           onCancel={handleRenameCancel}
+        />
+      )}
+
+      {searchOpen && (
+        <SearchChatsModal
+          conversations={conversations}
+          onClose={() => setSearchOpen(false)}
+          onSelect={id => {
+            handleSelectConversation(id);
+            setSearchOpen(false);
+          }}
+          onNew={() => {
+            handleNewConversation();
+            setSearchOpen(false);
+          }}
         />
       )}
     </>
