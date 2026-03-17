@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Plus, MessageSquare, Trash2, AlertTriangle, X } from "lucide-react";
+import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu } from "lucide-react";
 import type { Conversation } from "@/types";
 
 interface SidebarProps {
@@ -101,6 +101,7 @@ function DeleteModal({ title, onConfirm, onCancel }: DeleteModalProps) {
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete }: SidebarProps) {
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   function handleDeleteClick(e: React.MouseEvent, id: string, title: string) {
     e.stopPropagation();
@@ -118,52 +119,102 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
     setPendingDelete(null);
   }
 
+  function handleSelectConversation(id: string) {
+    onSelect(id);
+    setMobileOpen(false);
+  }
+
+  function handleNewConversation() {
+    onNew();
+    setMobileOpen(false);
+  }
+
+  const sidebarContent = (
+    <>
+      <div className="p-3 pl-4">
+        <button
+          onClick={handleNewConversation}
+          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-white transition-all active:scale-95"
+          style={{ background: "#C0392B" }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#922B21"}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#C0392B"}
+        >
+          <Plus size={16} /> New Conversation
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 pb-4 flex flex-col">
+        {conversations.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-xs text-gray-400 text-center px-4">
+              No conversations yet. Start asking!
+            </p>
+          </div>
+        ) : (
+          conversations.map(c => (
+            <div
+              key={c.id}
+              className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-pointer transition-colors ${
+                activeId === c.id ? "text-white" : "text-gray-700 hover:bg-gray-200"
+              }`}
+              style={activeId === c.id ? { background: "#F9EBEA", color: "#C0392B" } : {}}
+              onClick={() => handleSelectConversation(c.id)}
+            >
+              <MessageSquare size={14} className="flex-shrink-0" />
+              <span className="text-xs flex-1 truncate font-medium">{c.title}</span>
+              <button
+                onClick={e => handleDeleteClick(e, c.id, c.title)}
+                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-red-600 flex-shrink-0 p-0.5 rounded"
+                title="Delete conversation"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+
   return (
     <>
-      <aside className="hidden md:flex flex-col w-64 border-r border-gray-200 bg-gray-50 overflow-hidden" style={{ paddingTop: "64px" }}>
-        <div className="p-3 pl-4">
-          <button
-            onClick={onNew}
-            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-white transition-all active:scale-95"
-            style={{ background: "#C0392B" }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#922B21"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#C0392B"}
-          >
-            <Plus size={16} /> New Conversation
-          </button>
-        </div>
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="md:hidden fixed left-4 z-40 rounded-xl p-2.5 shadow-lg border border-gray-200 bg-white"
+        style={{ top: "78px" }}
+        aria-label="Open conversations"
+      >
+        <Menu size={18} style={{ color: "#C0392B" }} />
+      </button>
 
-        <div className="flex-1 overflow-y-auto px-2 pb-4 flex flex-col">
-          {conversations.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-xs text-gray-400 text-center px-4">
-                No conversations yet. Start asking!
-              </p>
-            </div>
-          ) : (
-            conversations.map(c => (
-              <div
-                key={c.id}
-                className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-pointer transition-colors ${
-                  activeId === c.id ? "text-white" : "text-gray-700 hover:bg-gray-200"
-                }`}
-                style={activeId === c.id ? { background: "#F9EBEA", color: "#C0392B" } : {}}
-                onClick={() => onSelect(c.id)}
-              >
-                <MessageSquare size={14} className="flex-shrink-0" />
-                <span className="text-xs flex-1 truncate font-medium">{c.title}</span>
-                <button
-                  onClick={e => handleDeleteClick(e, c.id, c.title)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-600 flex-shrink-0 p-0.5 rounded"
-                  title="Delete conversation"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+      <aside className="hidden md:flex flex-col w-64 border-r border-gray-200 bg-gray-50 overflow-hidden" style={{ paddingTop: "64px" }}>
+        {sidebarContent}
       </aside>
+
+      {mobileOpen && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 z-40"
+            style={{ background: "rgba(0,0,0,0.35)" }}
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside
+            className="md:hidden fixed top-0 left-0 bottom-0 z-50 w-72 max-w-[85vw] bg-gray-50 border-r border-gray-200 flex flex-col shadow-2xl"
+            style={{ paddingTop: "64px" }}
+          >
+            <div className="flex items-center justify-end px-3 pt-3">
+              <button
+                onClick={() => setMobileOpen(false)}
+                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-200 transition-colors"
+                aria-label="Close conversations"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {sidebarContent}
+          </aside>
+        </>
+      )}
 
       {pendingDelete && (
         <DeleteModal
