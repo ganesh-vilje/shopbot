@@ -16,16 +16,24 @@ export function useAuth() {
   }, []);
 
   async function login(email: string, password: string) {
-    const res = await api.post<{ access_token: string; user: User }>("/auth/login", { email, password });
-    setTokens(res.access_token);
+    const res = await api.post<{
+      access_token: string;
+      refresh_token: string;
+      user: User;
+    }>("/auth/login", { email, password });
+    setTokens(res.access_token, res.refresh_token);
     setUser(res.user);
     setUserState(res.user);
     router.push("/dashboard");
   }
 
   async function signup(full_name: string, email: string, password: string) {
-    const res = await api.post<{ access_token: string; user: User }>("/auth/signup", { full_name, email, password });
-    setTokens(res.access_token);
+    const res = await api.post<{
+      access_token: string;
+      refresh_token: string;
+      user: User;
+    }>("/auth/signup", { full_name, email, password });
+    setTokens(res.access_token, res.refresh_token);
     setUser(res.user);
     setUserState(res.user);
     router.push("/dashboard");

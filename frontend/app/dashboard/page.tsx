@@ -73,7 +73,7 @@ useEffect(() => {
         {/* Main chat area */}
         <main className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto flex" >
-            <div className="flex-1 flex flex-col max-w-3xl mx-auto px-4 pt-24 pb-50 w-full">
+            <div className="flex-1 flex flex-col max-w-3xl mx-auto px-4 pt-24 pb-6 w-full">
               {messages.length === 0 ? (
                 <WelcomeScreen name={user.full_name} onSuggest={text => { setInput(text); }} />
               ) : (
@@ -82,7 +82,7 @@ useEffect(() => {
                     <MessageBubble key={msg.id} message={msg} />
                   ))}
                   {streaming && messages[messages.length - 1]?.role === "user" && <TypingIndicator />}
-                  <div ref={bottomRef} />
+                  <div ref={bottomRef} className="h-8 shrink-0" />
                 </>
               )}
             </div>
