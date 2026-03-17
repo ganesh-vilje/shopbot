@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu, Pencil } from "lucide-react";
+import { useRef, useState } from "react";
+import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu, Pencil, Info } from "lucide-react";
 import type { Conversation } from "@/types";
 
 interface SidebarProps {
@@ -194,6 +194,36 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState("");
   const [renameLoading, setRenameLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const successHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const successClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showSuccess(message: string) {
+    if (successHideTimerRef.current) clearTimeout(successHideTimerRef.current);
+    if (successClearTimerRef.current) clearTimeout(successClearTimerRef.current);
+
+    setSuccessMessage(message);
+    setShowSuccessToast(true);
+
+    successHideTimerRef.current = setTimeout(() => {
+      setShowSuccessToast(false);
+    }, 2200);
+
+    successClearTimerRef.current = setTimeout(() => {
+      setSuccessMessage("");
+    }, 2500);
+  }
+
+  function dismissSuccess() {
+    if (successHideTimerRef.current) clearTimeout(successHideTimerRef.current);
+    if (successClearTimerRef.current) clearTimeout(successClearTimerRef.current);
+
+    setShowSuccessToast(false);
+    successClearTimerRef.current = setTimeout(() => {
+      setSuccessMessage("");
+    }, 220);
+  }
 
   function handleDeleteClick(e: React.MouseEvent, id: string, title: string) {
     e.stopPropagation();
@@ -211,6 +241,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
     if (pendingDelete) {
       onDelete(pendingDelete.id);
       setPendingDelete(null);
+      showSuccess("Deleted successfully");
     }
   }
 
@@ -238,6 +269,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       setRenameLoading(true);
       setRenameError("");
       await onRename(pendingRename.id, nextTitle);
+      showSuccess("Renamed successfully");
       handleRenameCancel();
     } catch (error) {
       setRenameError(error instanceof Error ? error.message : "Failed to rename conversation");
@@ -280,7 +312,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           conversations.map(c => (
             <div
               key={c.id}
-              className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-pointer transition-colors ${
+              className={`group relative flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-pointer transition-colors ${
                 activeId === c.id ? "text-white" : "text-gray-700 hover:bg-gray-200"
               }`}
               style={activeId === c.id ? { background: "#F9EBEA", color: "#C0392B" } : {}}
@@ -288,20 +320,34 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             >
               <MessageSquare size={14} className="flex-shrink-0" />
               <span className="text-xs flex-1 truncate font-medium">{c.title}</span>
-              <button
-                onClick={e => handleRenameClick(e, c.id, c.title)}
-                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-red-600 flex-shrink-0 p-0.5 rounded"
-                title="Rename conversation"
-              >
-                <Pencil size={12} />
-              </button>
-              <button
-                onClick={e => handleDeleteClick(e, c.id, c.title)}
-                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-red-600 flex-shrink-0 p-0.5 rounded"
-                title="Delete conversation"
-              >
-                <Trash2 size={12} />
-              </button>
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={e => handleRenameClick(e, c.id, c.title)}
+                  className="group/rename opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-red-600 p-0.5 rounded"
+                  aria-label="Rename conversation"
+                >
+                  <Pencil size={12} />
+                  <span
+                    className="pointer-events-none absolute right-0 -top-8 z-20 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] text-white opacity-0 transition-opacity duration-150 md:group-hover/rename:opacity-100"
+                  >
+                    Rename
+                  </span>
+                </button>
+              </div>
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={e => handleDeleteClick(e, c.id, c.title)}
+                  className="group/delete opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-red-600 p-0.5 rounded"
+                  aria-label="Delete conversation"
+                >
+                  <Trash2 size={12} />
+                  <span
+                    className="pointer-events-none absolute right-0 -top-8 z-20 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] text-white opacity-0 transition-opacity duration-150 md:group-hover/delete:opacity-100"
+                  >
+                    Delete
+                  </span>
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -367,6 +413,61 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           onCancel={handleRenameCancel}
         />
       )}
+
+      {successMessage && (
+        <div
+          className={`fixed bottom-3 left-3 z-30 flex max-w-[calc(100vw-1.5rem)] items-center gap-3 rounded-xl border px-4 py-2.5 text-sm font-medium shadow-lg md:absolute md:max-w-[220px] ${
+            showSuccessToast ? "sidebar-toast-enter" : "sidebar-toast-exit"
+          }`}
+          style={{
+            background: "#2F302C",
+            borderColor: "rgba(255,255,255,0.22)",
+            color: "#F8F8F7",
+          }}
+        >
+          <Info size={14} />
+          <span className="flex-1 whitespace-nowrap">{successMessage}</span>
+          <button
+            onClick={dismissSuccess}
+            className="rounded-md p-0.5 transition-colors"
+            aria-label="Close notification"
+            style={{ color: "rgba(255,255,255,0.8)" }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      <style jsx>{`
+        .sidebar-toast-enter {
+          animation: sidebarToastIn 0.22s ease-out forwards;
+        }
+
+        .sidebar-toast-exit {
+          animation: sidebarToastOut 0.22s ease-in forwards;
+        }
+
+        @keyframes sidebarToastIn {
+          from {
+            opacity: 0;
+            transform: translateX(-14px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        @keyframes sidebarToastOut {
+          from {
+            opacity: 1;
+            transform: translateX(0);
+          }
+          to {
+            opacity: 0;
+            transform: translateX(-14px);
+          }
+        }
+      `}</style>
     </>
   );
 }
