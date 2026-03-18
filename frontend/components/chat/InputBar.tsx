@@ -84,7 +84,7 @@ export default function InputBar({
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!disabled && value.trim()) onSubmit();
+      if (!disabled && value.trim()) handleSubmit();
     }
   }
 
@@ -106,21 +106,30 @@ export default function InputBar({
     }
   }
 
+  function handleSubmit() {
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    onSubmit();
+  }
+
   return (
     <div className="border-t border-gray-200 bg-white px-4 py-3">
       <div className="mx-auto max-w-3xl">
         <div
           className="flex items-end gap-2 rounded-lg px-4 py-2 transition-all"
-          style={{ border: "1px solid #C0392B" }}
+          style={{
+            border: "2px solid transparent",
+            boxShadow: "inset 0 0 0 1px #C0392B",
+          }}
           onMouseEnter={(e) => {
             const el = e.currentTarget as HTMLElement;
-            el.style.borderWidth = "2px";
-            el.style.borderColor = "#C0392B";
+            el.style.boxShadow = "inset 0 0 0 2px #C0392B";
           }}
           onMouseLeave={(e) => {
             const el = e.currentTarget as HTMLElement;
-            el.style.borderWidth = "1px";
-            el.style.borderColor = "#C0392B";
+            el.style.boxShadow = "inset 0 0 0 1px #C0392B";
           }}
         >
           <textarea
@@ -231,7 +240,7 @@ export default function InputBar({
           </div>
 
           <button
-            onClick={onSubmit}
+            onClick={handleSubmit}
             disabled={disabled || !value.trim()}
             className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
             style={{
