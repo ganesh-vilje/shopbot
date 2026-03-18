@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu, Pencil, Search, PenSquare } from "lucide-react";
+import { Plus, MessageSquare, Trash2, AlertTriangle, X, Menu, Pencil, Search, PenSquare, Info } from "lucide-react";
 import type { Conversation } from "@/types";
 
 interface SidebarProps {
