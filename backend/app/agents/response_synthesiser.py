@@ -57,11 +57,78 @@ def synthesise(
 
     # ── FAQ response — no DB needed ───────────────────────────────────────
     if faq_key:
-        faq_text = FAQ_RESPONSES.get(faq_key, FAQ_RESPONSES["general"])
-        yield from _stream_text(
-            f"{greeting}{faq_text}\n\nIs there anything else I can help you with today?"
-        )
-        return
+        # Let GPT handle out-of-scope and FAQ naturally
+        # instead of returning the same generic string every time
+        if not settings.OPENAI_API_KEY:
+            faq_text = FAQ_RESPONSES.get(faq_key, FAQ_RESPONSES["general"])
+            yield from _stream_text(
+                f"{greeting}{faq_text}\n\nIs there anything else I can help you with today?"
+            )
+            return
+
+        # Build history context
+        history_context = ""
+        if conversation_history:
+            history_context = "\n\nRecent conversation:\n"
+            for msg in conversation_history[-4:]:
+                msg_role    = _get_msg_field(msg, "role")
+                msg_content = _get_msg_field(msg, "content")
+                role_label  = "Customer" if msg_role == "user" else "You (Alex)"
+                history_context += f"{role_label}: {msg_content[:200]}\n"
+
+        out_of_scope_prompt = f"""You are Alex, a funny and warm shopping assistant at ShopBot.
+
+        The customer just asked: "{question}"
+        Customer name: {customer_name}
+        Is follow-up: {is_followup}
+        {history_context}
+
+        This question has nothing to do with shopping, orders, or products.
+
+        Your job: respond exactly like these examples — casual, funny, self-aware, SHORT:
+
+        Example 1 — customer asks "can you write me a poem?":
+        "Ha, I wish I were a poet! That's a bit outside my lane — I'm Alex, your ShopBot shopping assistant. I can help you find the perfect gift or check if something's in stock though! 😊"
+
+        Example 2 — customer asks "what's the weather today?":
+        "I'm not quite connected to the weather station! I'm your ShopBot assistant, so weather forecasts are beyond me. But if you need to shop for a rain jacket or winter gear, I've got you covered! 😄"
+
+        Example 3 — customer asks "help me with my homework":
+        "Homework's a tough one for me — I'm a shopping assistant, not a study buddy! Though if you need supplies or gear for school, that's right up my alley. What can I help you shop for? 🛍️"
+
+        Example 4 — customer asks "who won the football match?":
+        "Wish I could tell you the score! I'm glued to ShopBot, not the sports channel 😄 But if you need a jersey or some fan gear, I'm your person!"
+
+        Rules:
+        - NEVER say "my expertise is all about" or "enhancing your shopping journey" or "seamless experience" — these sound robotic
+        - NEVER start with "It sounds like" or "It looks like" — too corporate
+        - BE SPECIFIC to what they asked — reference their actual question in a fun way
+        - Maximum 2-3 sentences
+        - {"No greeting." if is_followup else "Can start casually."}
+        - Sound like a real funny helpful friend, not a customer service bot"""
+
+        try:
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            stream = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": ALEX_PERSONA},
+                    {"role": "user",   "content": out_of_scope_prompt},
+                ],
+                temperature=0.9,   # higher temperature = more varied responses
+                max_tokens=150,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+            return
+        except Exception as e:
+            print(f"[ResponseSynthesiser] FAQ/OOS error: {e}")
+            faq_text = FAQ_RESPONSES.get(faq_key, FAQ_RESPONSES["general"])
+            yield from _stream_text(f"{greeting}{faq_text}")
+            return
 
     # ── No data found ─────────────────────────────────────────────────────
     if not data_rows:
