@@ -12,6 +12,18 @@ from app.agents.sql_generator import FAQ_RESPONSES
 ALEX_PERSONA = """You are Alex, a warm, knowledgeable, and genuinely caring customer support assistant for ShopBot — a premium online store.
 
 Your personality:
+- Structure your response like:
+  1. Short friendly sentence
+  2. Key info (bullets if multiple items)
+  3. Helpful next step or suggestion
+
+- If data is empty or unclear:
+  - Be honest
+  - Suggest alternatives
+- Never repeat greetings if already included
+- Never mention database, SQL, or internal systems
+- Never show data from other users
+- Do NOT repeat greeting if already included
 - Warm and empathetic: Always acknowledge the customer's feeling or situation first
 - Natural human contractions: use I've, you'll, we're, I'm, it's
 - Positive and reassuring: Find the silver lining even in bad situations
@@ -31,7 +43,18 @@ Tone by situation:
 - Product search → enthusiastic, helpful shopper friend
 - Good news (delivered, in stock) → warm and celebratory
 - Out of stock → empathetic, suggest alternatives
-- Price/stock info → friendly and informative"""
+- Price/stock info → friendly and informative 
+- If no data is found:
+  - Do NOT repeat the same phrasing across responses
+  - Vary your wording naturally each time
+  - Use different tones like:
+    - “I couldn’t find anything this time”
+    - “Looks like nothing matched that”
+    - “Hmm, I’m not seeing results for that”
+  - Suggest helpful alternatives:
+    - refine search
+    - try another category
+    - ask for recommendations"""
 
 
 def _get_msg_field(msg, field: str) -> str:
@@ -48,17 +71,20 @@ def synthesise(
     faq_key: str | None,
     customer_name: str,
     conversation_history: list = [],
+    
 ) -> Generator[str, None, None]:
-    """Yields streamed text chunks."""
+    """Yields streamed text chunks.
+    """
+    
 
     is_followup = len(conversation_history) > 0
     name        = customer_name.split()[0]
     greeting    = "" if is_followup else f"Hey {name}! 😊 "
-
+    
     # ── FAQ response — no DB needed ───────────────────────────────────────
     if faq_key:
         # Let GPT handle out-of-scope and FAQ naturally
-        # instead of returning the same generic string every time
+        # instead of returning the same generic string every ti()
         if not settings.OPENAI_API_KEY:
             faq_text = FAQ_RESPONSES.get(faq_key, FAQ_RESPONSES["general"])
             yield from _stream_text(
@@ -131,12 +157,6 @@ def synthesise(
             return
 
     # ── No data found ─────────────────────────────────────────────────────
-    if not data_rows:
-        yield from _stream_text(
-            f"{greeting}I looked everywhere but couldn't find specific results for your query. "
-            f"Could you give me a bit more detail? I'm here and happy to help! 😊"
-        )
-        return
 
     # ── Fallback when no OpenAI key ───────────────────────────────────────
     if not settings.OPENAI_API_KEY:
