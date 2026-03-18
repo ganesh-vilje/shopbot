@@ -84,7 +84,7 @@ export default function InputBar({
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!disabled && value.trim()) onSubmit();
+      if (!disabled && value.trim()) handleSubmit();
     }
   }
 
@@ -104,6 +104,14 @@ export default function InputBar({
     } else {
       recognitionRef.current.start();
     }
+  }
+
+  function handleSubmit() {
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    onSubmit();
   }
 
   return (
@@ -232,7 +240,7 @@ export default function InputBar({
           </div>
 
           <button
-            onClick={onSubmit}
+            onClick={handleSubmit}
             disabled={disabled || !value.trim()}
             className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
             style={{
