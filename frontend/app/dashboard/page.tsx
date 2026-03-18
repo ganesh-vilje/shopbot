@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowDown } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/chat/Sidebar";
 import MessageBubble from "@/components/chat/MessageBubble";
@@ -19,7 +20,9 @@ export default function DashboardPage() {
   } = useChat();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const convLoadedRef = useRef(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -42,11 +45,30 @@ useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      setShowScrollToBottom(distanceFromBottom > 120);
+    };
+
+    handleScroll();
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [messages.length, activeConvId]);
+
   async function handleSend() {
     const text = input.trim();
     if (!text || streaming) return;
     setInput("");
     await sendMessage(text);
+  }
+
+  function handleScrollToBottom() {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }
 
   if (authLoading || !user) {
@@ -72,8 +94,8 @@ useEffect(() => {
         />
 
         {/* Main chat area */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto flex" >
+        <main className="relative flex-1 flex flex-col overflow-hidden">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex" >
             <div className="flex-1 flex flex-col max-w-3xl mx-auto px-4 pt-24 pb-6 w-full">
               {messages.length === 0 ? (
                 <WelcomeScreen name={user.full_name} onSuggest={text => { setInput(text); }} />
@@ -88,6 +110,16 @@ useEffect(() => {
               )}
             </div>
           </div>
+
+          {showScrollToBottom && (
+            <button
+              onClick={handleScrollToBottom}
+              className="absolute bottom-28 left-1/2 z-20 flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-lg transition-all hover:bg-red-30"
+              aria-label="Scroll to bottom"
+            >
+              <ArrowDown size={20} />
+            </button>
+          )}
 
           <InputBar
             value={input}
