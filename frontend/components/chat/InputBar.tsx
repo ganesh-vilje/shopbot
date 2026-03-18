@@ -111,16 +111,17 @@ export default function InputBar({
       <div className="mx-auto max-w-3xl">
         <div
           className="flex items-end gap-2 rounded-lg px-4 py-2 transition-all"
-          style={{ border: "1px solid #C0392B" }}
+          style={{
+            border: "2px solid transparent",
+            boxShadow: "inset 0 0 0 1px #C0392B",
+          }}
           onMouseEnter={(e) => {
             const el = e.currentTarget as HTMLElement;
-            el.style.borderWidth = "2px";
-            el.style.borderColor = "#C0392B";
+            el.style.boxShadow = "inset 0 0 0 2px #C0392B";
           }}
           onMouseLeave={(e) => {
             const el = e.currentTarget as HTMLElement;
-            el.style.borderWidth = "1px";
-            el.style.borderColor = "#C0392B";
+            el.style.boxShadow = "inset 0 0 0 1px #C0392B";
           }}
         >
           <textarea
