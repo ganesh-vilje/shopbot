@@ -1,6 +1,6 @@
 "use client";
 import { useState, useCallback } from "react";
-import { api, streamChat, getToken } from "@/lib/api";
+import { api, streamChat } from "@/lib/api";
 import type { Message, Conversation } from "@/types";
 
 export function useChat() {
@@ -24,7 +24,6 @@ export function useChat() {
 
   // ── Load conversation list ──────────────────────────────────────────────
   const loadConversations = useCallback(async () => {
-    if (!getToken()) return;
     try {
       const list = await api.get<Conversation[]>("/api/conversations");
       if (Array.isArray(list)) setConversations(list);
@@ -33,7 +32,6 @@ export function useChat() {
 
   // ── Load single conversation with messages ──────────────────────────────
   const loadConversation = useCallback(async (id: string) => {
-    if (!getToken()) return;
     try {
       const conv = await api.get<Conversation>(`/api/conversations/${id}`);
       if (conv && typeof conv === "object" && !Array.isArray(conv)) {

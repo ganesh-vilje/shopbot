@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Eye, EyeOff, ShoppingBag, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { getApiUrl } from "@/lib/api";
 
 export default function LoginForm() {
   const { login } = useAuth();
@@ -20,11 +21,11 @@ export default function LoginForm() {
   }
 
   async function handleGoogleLogin() {
-    window.location.href = "http://localhost:8000/auth/oauth/google";
+    window.location.href = getApiUrl("/auth/oauth/google");
   }
 
   async function handleGitHubLogin() {
-    window.location.href = "http://localhost:8000/auth/oauth/github";
+    window.location.href = getApiUrl("/auth/oauth/github");
   }
 
   return (

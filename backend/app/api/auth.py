@@ -1,17 +1,16 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import (
     verify_password, hash_password,
-    create_access_token, create_refresh_token,
+    create_access_token, create_refresh_token, decode_refresh_token,
 )
-from app.core.redis_client import get_redis
 from app.db.session import get_db
 from app.models.customer import Customer
 from app.schemas.auth import (
-    SignupRequest, LoginRequest, TokenResponse,
+    SignupRequest, LoginRequest, AuthSessionResponse,
     UserResponse, RefreshRequest,
 )
 import httpx
@@ -20,27 +19,59 @@ from urllib.parse import urlencode
 
 router = APIRouter(prefix="/auth", tags=["auth"], redirect_slashes=False)
 
-REFRESH_TTL = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+ACCESS_COOKIE_NAME = "shopbot_access_token"
+REFRESH_COOKIE_NAME = "shopbot_refresh_token"
 
 
-def _make_token_response(user: Customer) -> dict:
+def _cookie_options(max_age: int) -> dict:
+    options = {
+        "httponly": True,
+        "secure": settings.COOKIE_SECURE,
+        "samesite": settings.COOKIE_SAMESITE,
+        "path": "/",
+        "max_age": max_age,
+    }
+    if settings.COOKIE_DOMAIN:
+        options["domain"] = settings.COOKIE_DOMAIN
+    return options
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    response.set_cookie(
+        ACCESS_COOKIE_NAME,
+        access_token,
+        **_cookie_options(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
+    )
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        refresh_token,
+        **_cookie_options(settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600),
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    delete_options = {"path": "/"}
+    if settings.COOKIE_DOMAIN:
+        delete_options["domain"] = settings.COOKIE_DOMAIN
+
+    response.delete_cookie(ACCESS_COOKIE_NAME, **delete_options)
+    response.delete_cookie(REFRESH_COOKIE_NAME, **delete_options)
+
+
+def _make_session(user: Customer) -> tuple[str, str, UserResponse]:
     access_token = create_access_token(
         data={"sub": user.id},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
-    refresh_token = create_refresh_token()
-    redis = get_redis()
-    redis.setex(f"refresh:{refresh_token}", REFRESH_TTL, user.id)
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "user": UserResponse.model_validate(user),
-    }
+    refresh_token = create_refresh_token(
+        data={"sub": user.id},
+        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+    return access_token, refresh_token, UserResponse.model_validate(user)
 
 
-@router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def signup(payload: SignupRequest, db: Session = Depends(get_db)):
+@router.post("/signup", response_model=AuthSessionResponse, status_code=status.HTTP_201_CREATED)
+def signup(payload: SignupRequest, response: Response, db: Session = Depends(get_db)):
     existing = db.query(Customer).filter(Customer.email == payload.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -54,21 +85,13 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    return _make_token_response(user)
+    access_token, refresh_token, user_response = _make_session(user)
+    _set_auth_cookies(response, access_token, refresh_token)
+    return {"user": user_response}
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    # Rate limit: max 10 attempts per IP per 15 min
-    ip = request.client.host if request.client else "unknown"
-    redis = get_redis()
-    key = f"login_attempts:{ip}"
-    attempts = redis.incr(key)
-    if attempts == 1:
-        redis.expire(key, 900)
-    if attempts > 10:
-        raise HTTPException(status_code=429, detail="Too many login attempts. Try again in 15 minutes.")
-
+@router.post("/login", response_model=AuthSessionResponse)
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.query(Customer).filter(
         Customer.email == payload.email.lower(),
         Customer.deleted_at.is_(None),
@@ -77,29 +100,48 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     if not user or not user.hashed_password or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    redis.delete(key)  # reset on success
-    return _make_token_response(user)
+    access_token, refresh_token, user_response = _make_session(user)
+    _set_auth_cookies(response, access_token, refresh_token)
+    return {"user": user_response}
 
 
-@router.post("/refresh", response_model=TokenResponse)
-def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
-    redis = get_redis()
-    user_id = redis.get(f"refresh:{payload.refresh_token}")
-    if not user_id:
+@router.post("/refresh", response_model=AuthSessionResponse)
+def refresh_token(
+    request: Request,
+    response: Response,
+    payload: RefreshRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    refresh_token_value = (
+        (payload.refresh_token if payload else None)
+        or (request.cookies.get(REFRESH_COOKIE_NAME) if request else None)
+    )
+    if not refresh_token_value:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    refresh_payload = decode_refresh_token(refresh_token_value)
+    if not refresh_payload:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    user_id = refresh_payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid refresh token payload")
 
     user = db.query(Customer).filter(Customer.id == user_id, Customer.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    redis.delete(f"refresh:{payload.refresh_token}")
-    return _make_token_response(user)
+    access_token, refresh_token, user_response = _make_session(user)
+    if response is not None:
+        _set_auth_cookies(response, access_token, refresh_token)
+    return {"user": user_response}
 
 
 @router.post("/logout")
-def logout(payload: RefreshRequest):
-    redis = get_redis()
-    redis.delete(f"refresh:{payload.refresh_token}")
+def logout(
+    response: Response,
+):
+    if response is not None:
+        _clear_auth_cookies(response)
     return {"message": "Logged out successfully"}
 
 
@@ -108,7 +150,7 @@ def oauth_google_redirect():
     """Redirect user to Google login page."""
     params = {
         "client_id"    : settings.GOOGLE_CLIENT_ID,
-        "redirect_uri" : "http://localhost:8000/auth/oauth/callback",
+        "redirect_uri" : settings.GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope"        : "openid email profile",
         "access_type"  : "offline",
@@ -126,7 +168,7 @@ def oauth_callback(code: str, db: Session = Depends(get_db)):
         "code"         : code,
         "client_id"    : settings.GOOGLE_CLIENT_ID,
         "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri" : "http://localhost:8000/auth/oauth/callback",
+        "redirect_uri" : settings.GOOGLE_REDIRECT_URI,
         "grant_type"   : "authorization_code",
     })
     token_data = token_res.json()
@@ -157,16 +199,11 @@ def oauth_callback(code: str, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(customer)
 
-    # Issue our own JWT
-    result = _make_token_response(customer)
-    access_token = result["access_token"]
-    refresh_token = result["refresh_token"]
-
-    # Redirect to frontend with token in URL
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(
-        f"http://localhost:3000/oauth/success?token={access_token}&refresh_token={refresh_token}"
-    )
+    access_token, refresh_token, _ = _make_session(customer)
+    response = RedirectResponse(f"{settings.FRONTEND_URL}/oauth/success")
+    _set_auth_cookies(response, access_token, refresh_token)
+    return response
 
 
 @router.get("/oauth/github")
@@ -206,7 +243,7 @@ def oauth_github_callback(code: str, db: Session = Depends(get_db)):
 
     if not github_token:
         return RedirectResponse(
-            "http://localhost:3000/login?error=github_auth_failed"
+            f"{settings.FRONTEND_URL}/login?error=github_auth_failed"
         )
 
     # Get user info from GitHub
@@ -238,7 +275,7 @@ def oauth_github_callback(code: str, db: Session = Depends(get_db)):
 
     if not email:
         return RedirectResponse(
-            "http://localhost:3000/login?error=no_email"
+            f"{settings.FRONTEND_URL}/login?error=no_email"
         )
 
     full_name = user_info.get("name") or user_info.get("login") or email
@@ -258,12 +295,7 @@ def oauth_github_callback(code: str, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(customer)
 
-    # Issue our own JWT
-    result       = _make_token_response(customer)
-    access_token = result["access_token"]
-    refresh_token = result["refresh_token"]
-
-    # Redirect to frontend with token
-    return RedirectResponse(
-        f"http://localhost:3000/oauth/success?token={access_token}&refresh_token={refresh_token}"
-    )
+    access_token, refresh_token, _ = _make_session(customer)
+    response = RedirectResponse(f"{settings.FRONTEND_URL}/oauth/success")
+    _set_auth_cookies(response, access_token, refresh_token)
+    return response

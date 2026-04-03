@@ -1,28 +1,19 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api, setTokens, setUser } from "@/lib/api";
+import { api, setUser } from "@/lib/api";
 import type { User } from "@/types";
 
 export default function OAuthSuccess() {
   const router = useRouter();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const accessToken = params.get("token");
-    const refreshToken = params.get("refresh_token");
-
-    if (accessToken) {
-      setTokens(accessToken, refreshToken || undefined);
-      api.get<User>("/api/me")
-        .then(user => {
-          setUser(user);
-          router.push("/dashboard");
-        })
-        .catch(() => router.push("/login"));
-    } else {
-      router.push("/login");
-    }
+    api.get<User>("/api/me")
+      .then(user => {
+        setUser(user);
+        router.push("/dashboard");
+      })
+      .catch(() => router.push("/login"));
   }, [router]);
 
   return (

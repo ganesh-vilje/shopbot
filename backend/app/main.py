@@ -22,6 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.TRUSTED_HOSTS,
+)
+
 # Routers
 app.include_router(auth.router)
 app.include_router(chat.router)

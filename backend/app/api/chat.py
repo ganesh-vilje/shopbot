@@ -81,7 +81,7 @@ def chat(
     entities = classification.get("entities", {"limit": 5})
 
     # ── 5. Generate SQL ────────────────────────────────────────────────────
-    sql, faq_key = generate_sql(
+    sql, faq_key, sql_params = generate_sql(
         question    = payload.message,
         intent      = intent,
         entities    = entities,
@@ -98,7 +98,7 @@ def chat(
             or entities.get("brand")
             or entities.get("category")
         )
-        data_rows = execute_with_fallback(db, sql, search_term)
+        data_rows = execute_with_fallback(db, sql, search_term, params=sql_params)
 
     # ── 6. Stream response ─────────────────────────────────────────────────
     full_response = []

@@ -1,77 +1,59 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("access_token");
+export function getApiUrl(path = ""): string {
+  return `${API_URL}${path}`;
 }
 
-export function setTokens(accessToken: string, refreshToken?: string) {
-  localStorage.setItem("access_token", accessToken);
-  if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
-}
-
-export function clearTokens() {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-  localStorage.removeItem("user");
+export function clearSession() {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem("user");
 }
 
 export function getUser() {
   if (typeof window === "undefined") return null;
-  const u = localStorage.getItem("user");
-  return u ? JSON.parse(u) : null;
+  const stored = sessionStorage.getItem("user");
+  return stored ? JSON.parse(stored) : null;
 }
 
 export function setUser(user: object) {
-  localStorage.setItem("user", JSON.stringify(user));
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem("user", JSON.stringify(user));
 }
 
-// ─── Token refresh ─────────────────────────────────────────────────────
 let isRefreshing = false;
-let refreshQueue: Array<(token: string | null) => void> = [];
+let refreshQueue: Array<(ok: boolean) => void> = [];
 
-async function tryRefreshToken(): Promise<string | null> {
-  const refreshToken = typeof window !== "undefined"
-    ? localStorage.getItem("refresh_token")
-    : null;
-  if (!refreshToken) return null;
-
+async function tryRefreshSession(): Promise<boolean> {
   if (isRefreshing) {
-    return new Promise((resolve) => { refreshQueue.push(resolve); });
+    return new Promise((resolve) => {
+      refreshQueue.push(resolve);
+    });
   }
 
   isRefreshing = true;
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
+    const res = await fetch(getApiUrl("/auth/refresh"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      credentials: "include",
     });
-    if (!res.ok) {
-      clearTokens();
-      refreshQueue.forEach((cb) => cb(null));
-      refreshQueue = [];
-      if (typeof window !== "undefined") window.location.href = "/login";
-      return null;
-    }
-    const data = await res.json();
-    setTokens(data.access_token, data.refresh_token);
-    if (data.user) setUser(data.user);
-    refreshQueue.forEach((cb) => cb(data.access_token));
+    const ok = res.ok;
+    if (!ok) clearSession();
+    refreshQueue.forEach((cb) => cb(ok));
     refreshQueue = [];
-    return data.access_token;
+    return ok;
   } catch {
-    clearTokens();
-    refreshQueue.forEach((cb) => cb(null));
+    clearSession();
+    refreshQueue.forEach((cb) => cb(false));
     refreshQueue = [];
-    return null;
+    return false;
   } finally {
     isRefreshing = false;
   }
 }
 
-export async function refreshAccessToken(): Promise<string | null> {
-  return tryRefreshToken();
+export async function refreshAccessToken(): Promise<boolean> {
+  return tryRefreshSession();
 }
 
 async function request<T>(
@@ -79,27 +61,20 @@ async function request<T>(
   options: RequestInit = {},
   retry = true
 ): Promise<T> {
-  const token = getToken();
-
-  // No token and not a POST → return empty silently
-if (!token && options.method !== "POST") {
-  return [] as unknown as T;
-}
-
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await fetch(getApiUrl(path), {
+    ...options,
+    headers,
+    credentials: "include",
+  });
 
-  // Auto-refresh on 401
   if (res.status === 401 && retry) {
-    const newToken = await tryRefreshToken();
-    if (newToken) return request<T>(path, options, false);
-    if (options.method === "GET") return [] as unknown as T;
+    const refreshed = await tryRefreshSession();
+    if (refreshed) return request<T>(path, options, false);
     throw new Error("Session expired. Please log in again.");
   }
 
@@ -107,14 +82,22 @@ if (!token && options.method !== "POST") {
     const err = await res.json().catch(() => ({ detail: "Request failed" }));
     throw new Error(err.detail || "Request failed");
   }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   return res.json();
 }
 
 export const api = {
-  post: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: "POST", body: JSON.stringify(body) }),
+  post: <T>(path: string, body?: unknown) =>
+    request<T>(path, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
   get: <T>(path: string) =>
-    request<T>(path, { method: "GET" }),        // ← explicitly pass GET
+    request<T>(path, { method: "GET" }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: <T>(path: string) =>
@@ -130,19 +113,18 @@ export async function streamChat(
   onError: (e: string) => void,
   retry = true
 ) {
-  const token = getToken();
-  const res = await fetch(`${API_URL}/api/chat`, {
+  const res = await fetch(getApiUrl("/api/chat"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
+    credentials: "include",
     body: JSON.stringify({ message, conversation_id: conversationId }),
   });
 
   if (res.status === 401 && retry) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
       await streamChat(message, conversationId, onChunk, onConvId, onDone, onError, false);
       return;
     }
@@ -154,36 +136,48 @@ export async function streamChat(
     return;
   }
 
-const reader = res.body!.getReader();
-const decoder = new TextDecoder();
-let buffer = "";
-
-try {
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      const sseLine = line.endsWith("\r") ? line.slice(0, -1) : line;
-      if (!sseLine.startsWith("data: ")) continue;
-      const data = sseLine.slice(6);
-      if (!data) continue;
-      if (data === "[DONE]") { onDone(); continue; }
-      if (data.startsWith('{"conversation_id"')) {
-        try { onConvId(JSON.parse(data).conversation_id); } catch {}
-        continue;
-      }
-      onChunk(data.replace(/\\n/g, "\n"));
-    }
+  const reader = res.body?.getReader();
+  if (!reader) {
+    onError("Chat stream unavailable");
+    return;
   }
-} catch (err) {
-  console.warn("[streamChat] Stream ended:", err);
-  onDone();
-} finally {
-  reader.releaseLock();
-}
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const sseLine = line.endsWith("\r") ? line.slice(0, -1) : line;
+        if (!sseLine.startsWith("data: ")) continue;
+        const data = sseLine.slice(6);
+        if (!data) continue;
+        if (data === "[DONE]") {
+          onDone();
+          continue;
+        }
+        if (data.startsWith('{"conversation_id"')) {
+          try {
+            onConvId(JSON.parse(data).conversation_id);
+          } catch {
+            // Ignore malformed metadata chunk and keep streaming content.
+          }
+          continue;
+        }
+        onChunk(data.replace(/\\n/g, "\n"));
+      }
+    }
+  } catch (err) {
+    console.warn("[streamChat] Stream ended:", err);
+    onDone();
+  } finally {
+    reader.releaseLock();
+  }
 }

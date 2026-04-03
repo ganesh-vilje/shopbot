@@ -12,7 +12,7 @@ MAX_ROWS    = 50      # hard cap on rows returned to prevent data dumps
 TIMEOUT_MS  = 5000    # 5 seconds — kill slow queries
 
 
-def execute_query(db: Session, sql: str) -> list[dict]:
+def execute_query(db: Session, sql: str, params: dict[str, Any] | None = None) -> list[dict]:
     """
     Execute a validated SQL string and return rows as a list of dicts.
     Enforces a statement timeout and row cap.
@@ -26,7 +26,7 @@ def execute_query(db: Session, sql: str) -> list[dict]:
         # from holding DB connections
         db.execute(text(f"SET LOCAL statement_timeout = {TIMEOUT_MS}"))
 
-        result = db.execute(text(sql))
+        result = db.execute(text(sql), params or {})
         keys   = list(result.keys())
         rows   = []
 
@@ -70,7 +70,12 @@ def _serialise(v: Any) -> Any:
     return v
 
 
-def execute_with_fallback(db: Session, sql: str, search_term: str | None = None) -> list[dict]:
+def execute_with_fallback(
+    db: Session,
+    sql: str,
+    search_term: str | None = None,
+    params: dict[str, Any] | None = None,
+) -> list[dict]:
     """
     Execute SQL and if no results found, retry with individual words from the search term.
     
@@ -81,7 +86,7 @@ def execute_with_fallback(db: Session, sql: str, search_term: str | None = None)
     This handles cases where the full phrase doesn't match but a keyword does.
     """
     # Run original query first
-    rows = execute_query(db, sql)
+    rows = execute_query(db, sql, params=params)
 
     # If results found — return immediately, no fallback needed
     if rows:
@@ -100,17 +105,12 @@ def execute_with_fallback(db: Session, sql: str, search_term: str | None = None)
     for word in meaningful_words:
         print(f"[QueryExecutor] No results for '{search_term}' — retrying with '{word}'")
         
-        # Replace the search term in the SQL with the single word
-        # The SQL uses LIKE '%search_term%' pattern so we replace the value
-        fallback_sql = sql.replace(f"'%{search_term}%'", f"'%{word}%'")
-        
-        # Also handle case-insensitive LOWER() patterns
-        fallback_sql = fallback_sql.replace(
-            f"LOWER('%' || '{search_term}' || '%')",
-            f"LOWER('%' || '{word}' || '%')"
-        )
+        fallback_params = dict(params or {})
+        for key, value in list(fallback_params.items()):
+            if value == search_term:
+                fallback_params[key] = word
 
-        fallback_rows = execute_query(db, fallback_sql)
+        fallback_rows = execute_query(db, sql, params=fallback_params)
         
         if fallback_rows:
             print(f"[QueryExecutor] ✓ Found {len(fallback_rows)} results with fallback word '{word}'")

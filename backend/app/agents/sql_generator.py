@@ -153,18 +153,18 @@ def generate_sql(
     entities: dict,
     customer_id: str,
     engine: Engine,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[str], dict]:
     """
     Generate a validated SQL query for the given question.
 
     Returns:
-        (sql_string, None)      — valid SQL ready for execution
-        (None, faq_key)         — FAQ intent, no SQL needed
-        (None, None)            — out of scope or generation failed
+        (sql_string, None, params)      — valid SQL ready for execution
+        (None, faq_key, {})             — FAQ intent, no SQL needed
+        (None, None, {})                — out of scope or generation failed
     """
     # ── Handle non-DB intents immediately ─────────────────────────────────
     if intent in ("general_faq", "out_of_scope"):
-        return None, "general"
+        return None, "general", {}
 
     # ── Correct spelling mistakes in entities before generating SQL ────────
     if intent in ("product_search", "price_check", "stock_check", "top_products"):
@@ -175,7 +175,7 @@ def generate_sql(
 
     if not relevant_schema:
         print(f"[SQLGenerator] No schema found for intent: {intent}")
-        return None, "general"
+        return None, "general", {}
 
     schema_text = schema_to_prompt_text(relevant_schema)
 
@@ -220,7 +220,8 @@ Write the SQL query now. Remember:
     # ── Call GPT ─────────────────────────────────────────────────────────
     if not settings.OPENAI_API_KEY:
         print("[SQLGenerator] No OpenAI key — using fallback templates")
-        return _fallback_sql(intent, entities, customer_id), None
+        fallback_sql, fallback_params = _fallback_sql(intent, entities, customer_id)
+        return fallback_sql, None, fallback_params
 
     try:
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -242,7 +243,8 @@ Write the SQL query now. Remember:
 
         if not sql:
             print("[SQLGenerator] LLM returned empty SQL")
-            return _fallback_sql(intent, entities, customer_id), None
+            fallback_sql, fallback_params = _fallback_sql(intent, entities, customer_id)
+            return fallback_sql, None, fallback_params
 
         # ── Validate before returning ─────────────────────────────────────
         allowed_tables = list(relevant_schema.keys())
@@ -252,19 +254,21 @@ Write the SQL query now. Remember:
             print(f"[SQLGenerator] Validation failed: {reason}")
             print(f"[SQLGenerator] Rejected SQL: {sql[:200]}")
             # Fall back to safe static query for this intent
-            return _fallback_sql(intent, entities, customer_id), None
+            fallback_sql, fallback_params = _fallback_sql(intent, entities, customer_id)
+            return fallback_sql, None, fallback_params
 
         print(f"[SQLGenerator] ✓ Validated SQL for intent={intent}")
-        return sql, None
+        return sql, None, {}
 
     except Exception as e:
         print(f"[SQLGenerator] OpenAI error: {e}")
-        return _fallback_sql(intent, entities, customer_id), None
+        fallback_sql, fallback_params = _fallback_sql(intent, entities, customer_id)
+        return fallback_sql, None, fallback_params
 
 
 # ── Safe fallback templates (used when OpenAI is unavailable) ─────────────
 # These are hardcoded safe queries — no LLM involved.
-def _fallback_sql(intent: str, entities: dict, customer_id: str) -> Optional[str]:
+def _fallback_sql(intent: str, entities: dict, customer_id: str) -> tuple[Optional[str], dict]:
     """
     Pre-written safe queries used as fallback when:
     - OpenAI API key is not set
@@ -277,76 +281,90 @@ def _fallback_sql(intent: str, entities: dict, customer_id: str) -> Optional[str
         or entities.get("category")
         or ""
     )
+    search_pattern = f"%{search}%" if search else None
     limit       = min(int(entities.get("limit", 5)), 20)
     order_num   = entities.get("order_number", "")
     category    = entities.get("category", "")
 
-    FALLBACKS: dict[str, str] = {
-        "order_status": f"""
+    fallbacks: dict[str, tuple[str, dict]] = {
+        "order_status": ("""
             SELECT o.order_number, o.status, o.total_amount,
                    o.created_at, o.shipped_at, o.delivered_at,
                    o.tracking_number, o.payment_method
             FROM orders o
-            WHERE o.customer_id = '{customer_id}'
-            {"AND UPPER(o.order_number) = UPPER('" + order_num + "')" if order_num else ""}
+            WHERE o.customer_id = :customer_id
+            AND (:order_number IS NULL OR UPPER(o.order_number) = UPPER(:order_number))
             ORDER BY o.created_at DESC
             LIMIT 1
-        """,
-        "order_history": f"""
+        """, {"customer_id": customer_id, "order_number": order_num or None}),
+        "order_history": ("""
             SELECT o.order_number, o.status, o.total_amount,
                    o.created_at, o.payment_method
             FROM orders o
-            WHERE o.customer_id = '{customer_id}'
+            WHERE o.customer_id = :customer_id
             ORDER BY o.created_at DESC
-            LIMIT {limit}
-        """,
-        "product_search": f"""
+            LIMIT :limit
+        """, {"customer_id": customer_id, "limit": limit}),
+        "product_search": ("""
             SELECT name, brand, category, price, discount_pct,
                    stock_qty, rating, review_count, sku
             FROM products
             WHERE is_active = TRUE
-            {"AND (LOWER(name) LIKE LOWER('%" + search + "%') OR LOWER(brand) LIKE LOWER('%" + search + "%') OR LOWER(category) LIKE LOWER('%" + search + "%'))" if search else ""}
+            AND (
+                :search_pattern IS NULL
+                OR LOWER(name) LIKE LOWER(:search_pattern)
+                OR LOWER(brand) LIKE LOWER(:search_pattern)
+                OR LOWER(category) LIKE LOWER(:search_pattern)
+            )
             ORDER BY rating DESC, review_count DESC
-            LIMIT {limit}
-        """,
-        "price_check": f"""
+            LIMIT :limit
+        """, {"search_pattern": search_pattern, "limit": limit}),
+        "price_check": ("""
             SELECT name, brand, price, discount_pct,
                    ROUND(CAST(price AS NUMERIC) * (1 - CAST(discount_pct AS NUMERIC) / 100), 2) AS discounted_price,
                    stock_qty, rating, sku
             FROM products
             WHERE is_active = TRUE
-            {"AND (LOWER(name) LIKE LOWER('%" + search + "%') OR LOWER(brand) LIKE LOWER('%" + search + "%'))" if search else ""}
+            AND (
+                :search_pattern IS NULL
+                OR LOWER(name) LIKE LOWER(:search_pattern)
+                OR LOWER(brand) LIKE LOWER(:search_pattern)
+            )
             ORDER BY rating DESC
-            LIMIT {limit}
-        """,
-        "stock_check": f"""
+            LIMIT :limit
+        """, {"search_pattern": search_pattern, "limit": limit}),
+        "stock_check": ("""
             SELECT name, brand, sku, stock_qty,
                    CASE WHEN stock_qty > 0 THEN 'In Stock' ELSE 'Out of Stock' END AS availability,
                    price
             FROM products
             WHERE is_active = TRUE
-            {"AND (LOWER(name) LIKE LOWER('%" + search + "%') OR LOWER(brand) LIKE LOWER('%" + search + "%'))" if search else ""}
+            AND (
+                :search_pattern IS NULL
+                OR LOWER(name) LIKE LOWER(:search_pattern)
+                OR LOWER(brand) LIKE LOWER(:search_pattern)
+            )
             ORDER BY stock_qty DESC
-            LIMIT {limit}
-        """,
-        "customer_profile": f"""
+            LIMIT :limit
+        """, {"search_pattern": search_pattern, "limit": limit}),
+        "customer_profile": ("""
             SELECT full_name, email, phone, city, country,
                    is_verified, created_at
             FROM customers
-            WHERE id = '{customer_id}'
+            WHERE id = :customer_id
             AND deleted_at IS NULL
             LIMIT 1
-        """,
-        "top_products": f"""
+        """, {"customer_id": customer_id}),
+        "top_products": ("""
             SELECT name, brand, category, price, discount_pct,
                    rating, review_count, stock_qty, sku
             FROM products
             WHERE is_active = TRUE
-            {"AND LOWER(category) = LOWER('" + category + "')" if category else ""}
+            AND (:category IS NULL OR LOWER(category) = LOWER(:category))
             AND stock_qty > 0
             ORDER BY rating DESC, review_count DESC
-            LIMIT {limit}
-        """,
+            LIMIT :limit
+        """, {"category": category or None, "limit": limit}),
     }
 
-    return FALLBACKS.get(intent)
+    return fallbacks.get(intent, (None, {}))
