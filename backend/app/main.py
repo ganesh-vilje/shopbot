@@ -4,6 +4,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
 from app.api import auth, chat, users, products, orders
+from app.db.session import engine
+from app.models.refresh_session import RefreshSession
 
 app = FastAPI(
     title="ShopBot API",
@@ -33,6 +35,13 @@ app.include_router(chat.router)
 app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(orders.router)
+
+
+@app.on_event("startup")
+def ensure_auth_tables() -> None:
+    # Keep the dedicated auth session table available even if a local database
+    # has not yet applied the latest migration.
+    RefreshSession.__table__.create(bind=engine, checkfirst=True)
 
 
 @app.get("/health")

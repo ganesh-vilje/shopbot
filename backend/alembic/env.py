@@ -14,6 +14,7 @@ from app.models.customer import Customer
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.models.conversation import Conversation, Message
+from app.models.refresh_session import RefreshSession
 
 config = context.config
 db_url = os.environ.get("DATABASE_URL")

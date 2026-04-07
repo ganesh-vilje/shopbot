@@ -9,6 +9,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.order import Order
+    from app.models.refresh_session import RefreshSession
 
 
 class Customer(Base):
@@ -28,3 +29,8 @@ class Customer(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     orders: Mapped[list["Order"]] = relationship("Order", back_populates="customer")
+    refresh_sessions: Mapped[list["RefreshSession"]] = relationship(
+        "RefreshSession",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )

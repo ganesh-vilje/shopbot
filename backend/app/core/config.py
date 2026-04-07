@@ -16,8 +16,8 @@ class Settings(BaseSettings):
 
     JWT_SECRET_KEY: str = "change_me_before_production_use_a_random_32_char_secret"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15 #minutes
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30 #days
     COOKIE_DOMAIN: str = ""
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"

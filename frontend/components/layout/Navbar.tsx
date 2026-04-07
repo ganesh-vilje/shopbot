@@ -32,7 +32,7 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
           </button>
 
           {open && (
-            <div className="absolute right-0 top-14 w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+            <div className="absolute right-2 top-full mt-3 w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
               <div className="px-4 py-3 border-b border-gray-100">
                 <p className="font-semibold text-gray-900 text-sm">{user?.full_name}</p>
                 <p className="text-xs text-gray-500 mt-0.5 truncate">{user?.email}</p>
