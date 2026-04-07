@@ -1,4 +1,6 @@
+import json
 from functools import lru_cache
+from typing import Any
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,7 +18,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
-    TRUSTED_HOSTS: list[str] = ["localhost", "127.0.0.1"]
+    TRUSTED_HOSTS: str = "localhost,127.0.0.1"
 
     DATABASE_URL: str = "postgresql://shopbot:shopbot_secret@postgres:5432/shopbot_db"
 
@@ -30,10 +32,7 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
 
-    ALLOWED_ORIGINS: list[str] = [
-        "http://localhost:3000",
-        "http://frontend:3000",
-    ]
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://frontend:3000"
 
     @field_validator("COOKIE_SAMESITE")
     @classmethod
@@ -42,13 +41,6 @@ class Settings(BaseSettings):
         if normalised not in {"lax", "strict", "none"}:
             raise ValueError("COOKIE_SAMESITE must be one of: lax, strict, none")
         return normalised
-
-    @field_validator("ALLOWED_ORIGINS", "TRUSTED_HOSTS", mode="before")
-    @classmethod
-    def split_csv_values(cls, value):
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
 
     @field_validator("DEBUG", "COOKIE_SECURE", mode="before")
     @classmethod
@@ -65,6 +57,36 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
 
+    @staticmethod
+    def _parse_list_setting(value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        if not isinstance(value, str):
+            return []
+
+        raw_value = value.strip()
+        if not raw_value:
+            return []
+
+        if raw_value.startswith("["):
+            try:
+                decoded = json.loads(raw_value)
+            except json.JSONDecodeError:
+                decoded = None
+            if isinstance(decoded, list):
+                return [str(item).strip() for item in decoded if str(item).strip()]
+
+        return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+    @property
+    def trusted_hosts(self) -> list[str]:
+        return self._parse_list_setting(self.TRUSTED_HOSTS)
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        return self._parse_list_setting(self.ALLOWED_ORIGINS)
+
     def validate_runtime(self) -> None:
         if self.is_production:
             if self.DEBUG:
@@ -77,7 +99,7 @@ class Settings(BaseSettings):
                 raise ValueError("FRONTEND_URL must use https in production")
             if self.BACKEND_URL.startswith("http://"):
                 raise ValueError("BACKEND_URL must use https in production")
-            localhost_origins = [origin for origin in self.ALLOWED_ORIGINS if "localhost" in origin]
+            localhost_origins = [origin for origin in self.allowed_origins if "localhost" in origin]
             if localhost_origins:
                 raise ValueError("ALLOWED_ORIGINS cannot include localhost in production")
 
