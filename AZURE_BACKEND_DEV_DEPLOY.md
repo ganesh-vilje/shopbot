@@ -57,6 +57,7 @@ Application Settings:
 
 - `NEXT_PUBLIC_API_URL=https://shopbot-dev-be.azurewebsites.net`
 - `SCM_DO_BUILD_DURING_DEPLOYMENT=true`
+- `ENABLE_ORYX_BUILD=1`
 
 ### Backend App Service: `shopbot-dev-be`
 
@@ -79,7 +80,8 @@ Application Settings:
 - `DEBUG=false`
 - `COOKIE_SECURE=true`
 - `COOKIE_SAMESITE=none`
-- `SCM_DO_BUILD_DURING_DEPLOYMENT=true`
+- `SCM_DO_BUILD_DURING_DEPLOYMENT=1`
+- `ENABLE_ORYX_BUILD=1`
 
 Optional backend settings:
 
@@ -92,6 +94,8 @@ Optional backend settings:
 If Azure has trouble downloading publish profiles for Linux web apps, add:
 
 - `WEBSITE_WEBDEPLOY_USE_SCM=true`
+
+If remote build still doesn't run, make sure `WEBSITE_RUN_FROM_PACKAGE` is not set to `1`.
 
 ## Important Cookie Note
 
