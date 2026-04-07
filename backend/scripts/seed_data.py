@@ -172,8 +172,6 @@ def seed():
                 country        = country,
                 is_verified    = True,
                 hashed_password= demo_pwd,
-                oauth_provider = None,
-                oauth_id       = None,
             )
             db.add(c)
             customers.append(c)

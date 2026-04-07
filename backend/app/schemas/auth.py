@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr, field_validator
 import re
+
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class SignupRequest(BaseModel):
@@ -9,21 +10,21 @@ class SignupRequest(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
+    def validate_password(cls, value: str) -> str:
+        if len(value) < 8:
             raise ValueError("Password must be at least 8 characters")
-        if not re.search(r"[A-Z]", v):
+        if not re.search(r"[A-Z]", value):
             raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r"\d", v):
+        if not re.search(r"\d", value):
             raise ValueError("Password must contain at least one digit")
-        return v
+        return value
 
     @field_validator("full_name")
     @classmethod
-    def validate_name(cls, v: str) -> str:
-        if len(v.strip()) < 2:
+    def validate_name(cls, value: str) -> str:
+        if len(value.strip()) < 2:
             raise ValueError("Full name must be at least 2 characters")
-        return v.strip()
+        return value.strip()
 
 
 class LoginRequest(BaseModel):
@@ -44,12 +45,6 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class OAuthCallbackRequest(BaseModel):
-    provider: str
-    code: str
-    redirect_uri: str
 
 
 class RefreshRequest(BaseModel):

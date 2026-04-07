@@ -1,10 +1,10 @@
+from functools import lru_cache
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
-from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # App
     COMPANY_NAME: str = "ShopBot"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
@@ -12,10 +12,8 @@ class Settings(BaseSettings):
     BACKEND_URL: str = "http://localhost:8000"
     TRUSTED_HOSTS: list[str] = ["localhost", "127.0.0.1"]
 
-    # Database
     DATABASE_URL: str = "postgresql://shopbot:shopbot_secret@postgres:5432/shopbot_db"
 
-    # JWT
     JWT_SECRET_KEY: str = "change_me_before_production_use_a_random_32_char_secret"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
@@ -24,21 +22,8 @@ class Settings(BaseSettings):
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"
 
-    # OpenAI
     OPENAI_API_KEY: str = ""
 
-
-
-    # OAuth
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/oauth/callback"
-    GITHUB_CLIENT_ID: str = ""
-    GITHUB_CLIENT_SECRET: str = ""
-    GITHUB_REDIRECT_URI: str = "http://localhost:8000/auth/oauth/github/callback"
-
-
-    # CORS
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://frontend:3000",
@@ -100,6 +85,7 @@ def get_settings() -> Settings:
     loaded_settings = Settings()
     loaded_settings.validate_runtime()
     return loaded_settings
+
 
 get_settings.cache_clear()
 settings = get_settings()

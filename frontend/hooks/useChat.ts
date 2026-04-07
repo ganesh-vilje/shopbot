@@ -37,8 +37,13 @@ export function useChat() {
       if (conv && typeof conv === "object" && !Array.isArray(conv)) {
         setMessages((conv.messages as Message[]) || []);
         updateActiveConvId(id);
+        return true;
       }
-    } catch {}
+    } catch {
+      setMessages([]);
+      updateActiveConvId(null);
+    }
+    return false;
   }, [updateActiveConvId]);
 
   // ── Send message + stream response ─────────────────────────────────────

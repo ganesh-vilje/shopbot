@@ -19,6 +19,7 @@ export default function DashboardPage() {
     loadConversations, loadConversation, sendMessage, newConversation, deleteConversation, renameConversation,
   } = useChat();
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const convLoadedRef = useRef(false);
@@ -45,6 +46,12 @@ useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
 
+  function focusInput() {
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -64,7 +71,9 @@ useEffect(() => {
     const text = input.trim();
     if (!text || streaming) return;
     setInput("");
+    focusInput();
     await sendMessage(text);
+    focusInput();
   }
 
   function handleScrollToBottom() {
@@ -122,6 +131,7 @@ useEffect(() => {
           )}
 
           <InputBar
+            ref={inputRef}
             value={input}
             onChange={setInput}
             onSubmit={handleSend}

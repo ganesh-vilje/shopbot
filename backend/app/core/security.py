@@ -1,8 +1,24 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import secrets
+import types
 
 from jose import JWTError, jwt
+
+try:
+    import bcrypt as _bcrypt
+
+    # Passlib 1.7.4 probes bcrypt._bcrypt.__about__.__version__ during backend
+    # initialization, but newer bcrypt wheels do not expose that metadata.
+    if hasattr(_bcrypt, "_bcrypt") and not hasattr(_bcrypt._bcrypt, "__about__"):
+        _bcrypt._bcrypt.__about__ = types.SimpleNamespace(
+            __version__=getattr(_bcrypt, "__version__", "unknown")
+        )
+except Exception:
+    # If bcrypt is unavailable or the shim cannot be applied, passlib will fall
+    # back to its normal warning path.
+    pass
+
 from passlib.context import CryptContext
 
 from app.core.config import settings

@@ -458,7 +458,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                 >
                   <Pencil size={12} />
                   <span
-                    className="pointer-events-none absolute right-0 -top-8 z-20 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] text-white opacity-0 transition-opacity duration-150 md:group-hover/rename:opacity-100"
+                    className="pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] text-white opacity-0 transition-opacity duration-150 md:group-hover/rename:opacity-100"
                   >
                     Rename
                   </span>
@@ -472,7 +472,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                 >
                   <Trash2 size={12} />
                   <span
-                    className="pointer-events-none absolute right-0 -top-8 z-20 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] text-white opacity-0 transition-opacity duration-150 md:group-hover/delete:opacity-100"
+                    className="pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] text-white opacity-0 transition-opacity duration-150 md:group-hover/delete:opacity-100"
                   >
                     Delete
                   </span>

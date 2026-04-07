@@ -24,8 +24,6 @@ def upgrade() -> None:
         sa.Column('loyalty_points', sa.Integer(), default=0),
         sa.Column('is_verified', sa.Boolean(), default=False),
         sa.Column('hashed_password', sa.Text()),
-        sa.Column('oauth_provider', sa.String(50)),
-        sa.Column('oauth_id', sa.String(255)),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('deleted_at', sa.DateTime(timezone=True)),

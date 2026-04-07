@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Mic, Send } from "lucide-react";
 
 interface InputBarProps {
@@ -21,16 +21,24 @@ type BrowserSpeechRecognition = {
   onerror: null | ((event: any) => void);
 };
 
-export default function InputBar({
-  value,
-  onChange,
-  onSubmit,
-  disabled,
-}: InputBarProps) {
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+const InputBar = forwardRef<HTMLTextAreaElement, InputBarProps>(function InputBar(
+  { value, onChange, onSubmit, disabled },
+  forwardedRef
+) {
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isListening, setIsListening] = useState(false);
+
+  function setTextAreaRef(node: HTMLTextAreaElement | null) {
+    textAreaRef.current = node;
+
+    if (typeof forwardedRef === "function") {
+      forwardedRef(node);
+    } else if (forwardedRef) {
+      (forwardedRef as MutableRefObject<HTMLTextAreaElement | null>).current = node;
+    }
+  }
 
   useEffect(() => {
     if (!textAreaRef.current) return;
@@ -133,12 +141,11 @@ export default function InputBar({
           }}
         >
           <textarea
-            ref={textAreaRef}
+            ref={setTextAreaRef}
             rows={1}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKey}
-            disabled={disabled}
             placeholder="Ask about your orders, products, account..."
             className="flex-1 resize-none bg-transparent px-1 text-left text-sm text-gray-800 placeholder-gray-400 focus:outline-none"
             style={{ paddingBottom: "6px", fontFamily: "sans-serif" }}
@@ -148,6 +155,7 @@ export default function InputBar({
             {!isListening ? (
               <div className="relative">
                 <button
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={handleVoiceClick}
                   disabled={disabled}
                   className="peer flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
@@ -210,6 +218,7 @@ export default function InputBar({
                 </div>
 
                 <button
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={handleVoiceClick}
                   className="ml-1 text-xs font-medium transition-all"
                   style={{ color: "#D93006" }}
@@ -240,6 +249,7 @@ export default function InputBar({
           </div>
 
           <button
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleSubmit}
             disabled={disabled || !value.trim()}
             className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
@@ -271,4 +281,6 @@ export default function InputBar({
       </div>
     </div>
   );
-}
+});
+
+export default InputBar;

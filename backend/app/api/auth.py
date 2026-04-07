@@ -1,20 +1,26 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import (
-    verify_password, hash_password,
-    create_access_token, create_refresh_token, decode_refresh_token,
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    hash_password,
+    verify_password,
 )
 from app.db.session import get_db
 from app.models.customer import Customer
 from app.schemas.auth import (
-    SignupRequest, LoginRequest, AuthSessionResponse,
-    UserResponse, RefreshRequest,
+    AuthSessionResponse,
+    LoginRequest,
+    RefreshRequest,
+    SignupRequest,
+    UserResponse,
 )
-import httpx
-from urllib.parse import urlencode
 
 
 router = APIRouter(prefix="/auth", tags=["auth"], redirect_slashes=False)
@@ -72,15 +78,19 @@ def _make_session(user: Customer) -> tuple[str, str, UserResponse]:
 
 @router.post("/signup", response_model=AuthSessionResponse, status_code=status.HTTP_201_CREATED)
 def signup(payload: SignupRequest, response: Response, db: Session = Depends(get_db)):
-    existing = db.query(Customer).filter(Customer.email == payload.email).first()
+    email = payload.email.lower()
+    existing = db.query(Customer).filter(
+        func.lower(Customer.email) == email,
+        Customer.deleted_at.is_(None),
+    ).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     user = Customer(
         full_name=payload.full_name,
-        email=payload.email.lower(),
+        email=email,
         hashed_password=hash_password(payload.password),
-        is_verified=True,   # skip email verification for simplicity
+        is_verified=True,
     )
     db.add(user)
     db.commit()
@@ -92,8 +102,9 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
 
 @router.post("/login", response_model=AuthSessionResponse)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    email = payload.email.lower()
     user = db.query(Customer).filter(
-        Customer.email == payload.email.lower(),
+        func.lower(Customer.email) == email,
         Customer.deleted_at.is_(None),
     ).first()
 
@@ -137,165 +148,7 @@ def refresh_token(
 
 
 @router.post("/logout")
-def logout(
-    response: Response,
-):
+def logout(response: Response):
     if response is not None:
         _clear_auth_cookies(response)
     return {"message": "Logged out successfully"}
-
-
-@router.get("/oauth/google")
-def oauth_google_redirect():
-    """Redirect user to Google login page."""
-    params = {
-        "client_id"    : settings.GOOGLE_CLIENT_ID,
-        "redirect_uri" : settings.GOOGLE_REDIRECT_URI,
-        "response_type": "code",
-        "scope"        : "openid email profile",
-        "access_type"  : "offline",
-    }
-    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url)
-
-
-@router.get("/oauth/callback")
-def oauth_callback(code: str, db: Session = Depends(get_db)):
-    """Google sends the user back here with a code."""
-    # Exchange code for token
-    token_res = httpx.post("https://oauth2.googleapis.com/token", data={
-        "code"         : code,
-        "client_id"    : settings.GOOGLE_CLIENT_ID,
-        "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri" : settings.GOOGLE_REDIRECT_URI,
-        "grant_type"   : "authorization_code",
-    })
-    token_data = token_res.json()
-    access_token_google = token_data.get("access_token")
-
-    # Get user info from Google
-    user_res  = httpx.get(
-        "https://www.googleapis.com/oauth2/v2/userinfo",
-        headers={"Authorization": f"Bearer {access_token_google}"}
-    )
-    user_info = user_res.json()
-
-    email     = user_info.get("email")
-    full_name = user_info.get("name", email)
-    oauth_id  = user_info.get("id")
-
-    # Upsert customer
-    customer = db.query(Customer).filter(Customer.email == email).first()
-    if not customer:
-        customer = Customer(
-            full_name      = full_name,
-            email          = email,
-            is_verified    = True,
-            oauth_provider = "google",
-            oauth_id       = oauth_id,
-        )
-        db.add(customer)
-        db.commit()
-        db.refresh(customer)
-
-    from fastapi.responses import RedirectResponse
-    access_token, refresh_token, _ = _make_session(customer)
-    response = RedirectResponse(f"{settings.FRONTEND_URL}/oauth/success")
-    _set_auth_cookies(response, access_token, refresh_token)
-    return response
-
-
-@router.get("/oauth/github")
-def oauth_github_redirect():
-    """Redirect user to GitHub login page."""
-    from urllib.parse import urlencode
-    from fastapi.responses import RedirectResponse
-
-    params = {
-        "client_id"   : settings.GITHUB_CLIENT_ID,
-        "redirect_uri": settings.GITHUB_REDIRECT_URI,
-        "scope"       : "user:email",
-    }
-    url = "https://github.com/login/oauth/authorize?" + urlencode(params)
-    return RedirectResponse(url)
-
-
-@router.get("/oauth/github/callback")
-def oauth_github_callback(code: str, db: Session = Depends(get_db)):
-    """GitHub sends the user back here with a code."""
-    import httpx
-    from fastapi.responses import RedirectResponse
-
-    # Exchange code for access token
-    token_res = httpx.post(
-        "https://github.com/login/oauth/access_token",
-        headers={"Accept": "application/json"},
-        data={
-            "client_id"    : settings.GITHUB_CLIENT_ID,
-            "client_secret": settings.GITHUB_CLIENT_SECRET,
-            "code"         : code,
-            "redirect_uri" : settings.GITHUB_REDIRECT_URI,
-        }
-    )
-    token_data  = token_res.json()
-    github_token = token_data.get("access_token")
-
-    if not github_token:
-        return RedirectResponse(
-            f"{settings.FRONTEND_URL}/login?error=github_auth_failed"
-        )
-
-    # Get user info from GitHub
-    user_res  = httpx.get(
-        "https://api.github.com/user",
-        headers={
-            "Authorization": f"Bearer {github_token}",
-            "Accept"       : "application/vnd.github+json",
-        }
-    )
-    user_info = user_res.json()
-
-    # GitHub may not return email publicly — fetch separately
-    email = user_info.get("email")
-    if not email:
-        emails_res = httpx.get(
-            "https://api.github.com/user/emails",
-            headers={
-                "Authorization": f"Bearer {github_token}",
-                "Accept"       : "application/vnd.github+json",
-            }
-        )
-        emails = emails_res.json()
-        # Pick the primary verified email
-        for e in emails:
-            if e.get("primary") and e.get("verified"):
-                email = e.get("email")
-                break
-
-    if not email:
-        return RedirectResponse(
-            f"{settings.FRONTEND_URL}/login?error=no_email"
-        )
-
-    full_name = user_info.get("name") or user_info.get("login") or email
-    oauth_id  = str(user_info.get("id"))
-
-    # Upsert customer
-    customer = db.query(Customer).filter(Customer.email == email).first()
-    if not customer:
-        customer = Customer(
-            full_name      = full_name,
-            email          = email,
-            is_verified    = True,
-            oauth_provider = "github",
-            oauth_id       = oauth_id,
-        )
-        db.add(customer)
-        db.commit()
-        db.refresh(customer)
-
-    access_token, refresh_token, _ = _make_session(customer)
-    response = RedirectResponse(f"{settings.FRONTEND_URL}/oauth/success")
-    _set_auth_cookies(response, access_token, refresh_token)
-    return response

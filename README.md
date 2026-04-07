@@ -1,4 +1,5 @@
 # ShopBot
+backend run command: python -m uvicorn app.main:app --reload
 
 ShopBot is a full-stack e-commerce chat assistant with a Next.js frontend and a FastAPI backend backed by PostgreSQL.
 
@@ -21,8 +22,6 @@ JWT_SECRET_KEY=replace_this_with_a_real_secret
 NEXT_PUBLIC_API_URL=http://localhost:8000
 FRONTEND_URL=http://localhost:3000
 ```
-
-If you want OAuth, also set the Google and/or GitHub client values and matching redirect URIs.
 
 ### 2. Start the backend
 
