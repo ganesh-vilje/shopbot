@@ -1,10 +1,16 @@
 from functools import lru_cache
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"),
+        extra="ignore",
+        enable_decoding=False,
+    )
+
     COMPANY_NAME: str = "ShopBot"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
@@ -28,10 +34,6 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://frontend:3000",
     ]
-
-    class Config:
-        env_file = (".env", "../.env")
-        extra = "ignore"
 
     @field_validator("COOKIE_SAMESITE")
     @classmethod

@@ -75,7 +75,7 @@ Application Settings:
 - `FRONTEND_URL=https://shopbot-dev-fe.azurewebsites.net`
 - `BACKEND_URL=https://shopbot-dev-be.azurewebsites.net`
 - `ALLOWED_ORIGINS=https://shopbot-dev-fe.azurewebsites.net`
-- `TRUSTED_HOSTS=shopbot-dev-be.azurewebsites.net`
+- `TRUSTED_HOSTS=shopbot-dev-be.azurewebsites.net,shopbot-dev-be-ggdsegeddtdhg9dn.swedencentral-01.azurewebsites.net`
 - `ENVIRONMENT=development`
 - `DEBUG=false`
 - `COOKIE_SECURE=true`
@@ -90,6 +90,8 @@ Optional backend settings:
 - `REFRESH_TOKEN_EXPIRE_DAYS=30`
 - `OPENAI_API_KEY=<your-dev-openai-key>`
 - `COOKIE_DOMAIN=`
+
+`ALLOWED_ORIGINS` and `TRUSTED_HOSTS` can be entered as normal comma-separated Azure App Setting values; JSON array formatting is not required.
 
 If Azure has trouble downloading publish profiles for Linux web apps, add:
 
