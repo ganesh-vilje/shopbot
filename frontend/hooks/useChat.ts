@@ -54,6 +54,7 @@ export function useChat() {
       id: Date.now().toString(),
       role: "user",
       content: text,
+      created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMsg]);
     setStreaming(true);

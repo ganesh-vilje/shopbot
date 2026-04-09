@@ -6,7 +6,7 @@ import { Mic, Send } from "lucide-react";
 interface InputBarProps {
   value: string;
   onChange: (v: string) => void;
-  onSubmit: () => void;
+  onSubmit: (text: string) => void;
   disabled?: boolean;
 }
 
@@ -28,6 +28,7 @@ const InputBar = forwardRef<HTMLTextAreaElement, InputBarProps>(function InputBa
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ignoreSpeechResultsRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
 
   function setTextAreaRef(node: HTMLTextAreaElement | null) {
@@ -65,9 +66,17 @@ const InputBar = forwardRef<HTMLTextAreaElement, InputBarProps>(function InputBa
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
+    recognition.onstart = () => {
+      ignoreSpeechResultsRef.current = false;
+      setIsListening(true);
+    };
+    recognition.onend = () => {
+      ignoreSpeechResultsRef.current = false;
+      setIsListening(false);
+    };
     recognition.onresult = (event) => {
+      if (ignoreSpeechResultsRef.current) return;
+
       let transcript = "";
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -115,11 +124,16 @@ const InputBar = forwardRef<HTMLTextAreaElement, InputBarProps>(function InputBa
   }
 
   function handleSubmit() {
+    const text = value.trim();
+    if (!text || disabled) return;
+
     if (isListening && recognitionRef.current) {
+      ignoreSpeechResultsRef.current = true;
       recognitionRef.current.stop();
     }
 
-    onSubmit();
+    onSubmit(text);
+    onChange("");
   }
 
   return (

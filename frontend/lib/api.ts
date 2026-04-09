@@ -23,6 +23,12 @@ export function setUser(user: object) {
 let isRefreshing = false;
 let refreshQueue: Array<(ok: boolean) => void> = [];
 
+function shouldAttemptRefresh(path: string): boolean {
+  return !path.startsWith("/auth/login")
+    && !path.startsWith("/auth/signup")
+    && !path.startsWith("/auth/refresh");
+}
+
 async function tryRefreshSession(): Promise<boolean> {
   if (isRefreshing) {
     return new Promise((resolve) => {
@@ -72,7 +78,7 @@ async function request<T>(
     credentials: "include",
   });
 
-  if (res.status === 401 && retry) {
+  if (res.status === 401 && retry && shouldAttemptRefresh(path)) {
     const refreshed = await tryRefreshSession();
     if (refreshed) return request<T>(path, options, false);
     throw new Error("Session expired. Please log in again.");

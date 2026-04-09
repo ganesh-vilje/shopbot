@@ -67,10 +67,8 @@ useEffect(() => {
     return () => container.removeEventListener("scroll", handleScroll);
   }, [messages.length, activeConvId]);
 
-  async function handleSend() {
-    const text = input.trim();
+  async function handleSend(text: string) {
     if (!text || streaming) return;
-    setInput("");
     focusInput();
     await sendMessage(text);
     focusInput();

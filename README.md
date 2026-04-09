@@ -1,5 +1,5 @@
 # ShopBot
-backend run command: python -m uvicorn app.main:app --reload
+Backend run command: `cd backend && python -m uvicorn app.main:app --reload`
 
 ShopBot is a full-stack e-commerce chat assistant with a Next.js frontend and a FastAPI backend backed by PostgreSQL.
 
@@ -22,6 +22,13 @@ JWT_SECRET_KEY=replace_this_with_a_real_secret
 NEXT_PUBLIC_API_URL=http://localhost:8000
 FRONTEND_URL=http://localhost:3000
 ```
+
+The repo-root `.env` is the shared source of truth for both apps:
+
+- the frontend reads `NEXT_PUBLIC_API_URL`
+- the backend reads `FRONTEND_URL` and will use it as the default CORS origin
+- set `ALLOWED_ORIGINS` for explicit comma-separated origins, or `CORS_ORIGINS` if you are using the legacy name in an existing local env file
+- in local development, the backend also accepts `http://localhost:<port>` and `http://127.0.0.1:<port>` origins automatically
 
 ### 2. Start the backend
 

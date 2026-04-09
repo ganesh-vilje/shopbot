@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
-    TRUSTED_HOSTS: str = "localhost,127.0.0.1"
+    TRUSTED_HOSTS: str = "localhost,127.0.0.1,192.168.0.27"
 
     DATABASE_URL: str = "postgresql://shopbot:shopbot_secret@postgres:5432/shopbot_db"
 
@@ -32,7 +32,8 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
 
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://frontend:3000"
+    ALLOWED_ORIGINS: str = ""
+    CORS_ORIGINS: str = ""
 
     @field_validator("COOKIE_SAMESITE")
     @classmethod
@@ -85,7 +86,18 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        return self._parse_list_setting(self.ALLOWED_ORIGINS)
+        configured_origins = self._parse_list_setting(self.ALLOWED_ORIGINS)
+        if not configured_origins:
+            configured_origins = self._parse_list_setting(self.CORS_ORIGINS)
+        if configured_origins:
+            return configured_origins
+        return [self.FRONTEND_URL] if self.FRONTEND_URL else []
+
+    @property
+    def allow_origin_regex(self) -> str | None:
+        if self.is_production:
+            return None
+        return r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
     def validate_runtime(self) -> None:
         if self.is_production:
