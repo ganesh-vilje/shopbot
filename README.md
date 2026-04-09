@@ -23,12 +23,13 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 FRONTEND_URL=http://localhost:3000
 ```
 
-The repo-root `.env` is the shared source of truth for both apps:
+The backend loads environment values from `backend/.env` first and then the repo-root `.env`, so either location works during local development. The repo-root `.env` is the shared source of truth for both apps:
 
 - the frontend reads `NEXT_PUBLIC_API_URL`
 - the backend reads `FRONTEND_URL` and will use it as the default CORS origin
 - set `ALLOWED_ORIGINS` for explicit comma-separated origins, or `CORS_ORIGINS` if you are using the legacy name in an existing local env file
 - in local development, the backend also accepts `http://localhost:<port>` and `http://127.0.0.1:<port>` origins automatically
+- `OPENAI_API_KEY` must be a real key value, not the sample placeholder from `.env.example`
 
 ### 2. Start the backend
 
@@ -74,3 +75,4 @@ npm run dev
 - `alex@example.com` / `Demo@12345`
 - `sarah@example.com` / `Demo@12345`
 - `mike@example.com` / `Demo@12345`
+Remove-Item Env:OPENAI_API_KEY

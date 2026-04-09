@@ -1,14 +1,39 @@
 import json
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _read_env_file_value(name: str) -> str:
+    for env_path in (BACKEND_DIR / ".env", PROJECT_ROOT / ".env"):
+        try:
+            contents = env_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        for raw_line in contents.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+
+            key, raw_value = line.split("=", 1)
+            if key.strip() != name:
+                continue
+
+            return raw_value.strip().strip('"').strip("'")
+
+    return ""
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
+        env_file=(str(BACKEND_DIR / ".env"), str(PROJECT_ROOT / ".env")),
         extra="ignore",
         enable_decoding=False,
     )
@@ -41,6 +66,31 @@ class Settings(BaseSettings):
         normalised = value.lower()
         if normalised not in {"lax", "strict", "none"}:
             raise ValueError("COOKIE_SAMESITE must be one of: lax, strict, none")
+        return normalised
+
+    @field_validator("OPENAI_API_KEY", mode="before")
+    @classmethod
+    def normalise_openai_api_key(cls, value):
+        if not isinstance(value, str):
+            return value
+
+        normalised = value.strip().strip('"').strip("'")
+        if not normalised:
+            return _read_env_file_value("OPENAI_API_KEY")
+
+        lowered = normalised.lower()
+        placeholder_markers = (
+            "your_api",
+            "your-openai",
+            "your_openai",
+            "placeholder",
+            "replace_me",
+        )
+
+        if "*" in normalised or any(marker in lowered for marker in placeholder_markers):
+            fallback = _read_env_file_value("OPENAI_API_KEY")
+            return fallback or ""
+
         return normalised
 
     @field_validator("DEBUG", "COOKIE_SECURE", mode="before")
